@@ -24,6 +24,22 @@ irm https://raw.githubusercontent.com/gtorige/morangos/main/install.ps1 | iex
 - Clique duas vezes no atalho "Morangos" na sua area de trabalho
 - O app abrira automaticamente no navegador em alguns segundos
 
+## ATUALIZAR O APP
+
+Execute o mesmo comando da instalacao no PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/gtorige/morangos/main/install.ps1 | iex
+```
+
+Escolha a opcao **[2] Atualizar**. Seus dados e configuracoes serao preservados.
+
+## DESINSTALAR
+
+Execute o mesmo comando no PowerShell e escolha a opcao **[3] Desinstalar**.
+Sera necessario digitar DESINSTALAR para confirmar.
+Isso remove o app, dados e atalho (Node.js e Git nao sao removidos).
+
 ## CONFIGURACAO DO GOOGLE MAPS
 
 Durante a instalacao o app pedira sua chave do Google.

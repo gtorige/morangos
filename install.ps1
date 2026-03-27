@@ -29,9 +29,124 @@ function Refresh-Path {
 # ============================================================
 if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed"))) {
     Write-Host ""
-    Write-Host "App ja esta instalado!" -ForegroundColor Green
+    Write-Host "================================================" -ForegroundColor Cyan
+    Write-Host "  MORANGOS - GERENCIADOR" -ForegroundColor Cyan
+    Write-Host "================================================" -ForegroundColor Cyan
     Write-Host ""
-    # Pular para INICIAR APP
+    Write-Host "  [1] Iniciar o app" -ForegroundColor White
+    Write-Host "  [2] Atualizar para ultima versao" -ForegroundColor White
+    Write-Host "  [3] Desinstalar" -ForegroundColor White
+    Write-Host ""
+    $choice = Read-Host "Escolha uma opcao (1/2/3)"
+
+    switch ($choice) {
+        "2" {
+            # ATUALIZAR
+            Write-Host ""
+            Write-Host "Atualizando o aplicativo..." -ForegroundColor Yellow
+            Set-Location $morangosDir
+            try {
+                # Salvar .env e dev.db antes de atualizar
+                $envBackup = $null
+                $envPath = Join-Path $morangosDir ".env"
+                if (Test-Path $envPath) {
+                    $envBackup = Get-Content $envPath -Raw
+                }
+                $dbPath = Join-Path $morangosDir "prisma\dev.db"
+                $dbBackupPath = Join-Path $env:TEMP "morangos-dev.db.bak"
+                if (Test-Path $dbPath) {
+                    Copy-Item $dbPath $dbBackupPath -Force
+                }
+
+                & git fetch origin 2>&1
+                & git reset --hard origin/main 2>&1
+                if ($LASTEXITCODE -ne 0) { throw "git pull failed" }
+                Write-Host "Codigo atualizado!" -ForegroundColor Green
+
+                # Restaurar .env
+                if ($envBackup) {
+                    Set-Content -Path $envPath -Value $envBackup -NoNewline
+                    Write-Host "Arquivo .env restaurado!" -ForegroundColor Green
+                }
+
+                # Restaurar banco de dados
+                if (Test-Path $dbBackupPath) {
+                    Copy-Item $dbBackupPath $dbPath -Force
+                    Remove-Item $dbBackupPath -Force
+                    Write-Host "Banco de dados restaurado!" -ForegroundColor Green
+                }
+
+                Write-Host "Instalando dependencias..." -ForegroundColor Yellow
+                & npm install 2>&1
+                if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
+
+                Write-Host "Aplicando migracoes do banco..." -ForegroundColor Yellow
+                & npx prisma generate 2>&1
+                & npx prisma migrate deploy 2>&1
+
+                # Recriar marcador e iniciar.ps1
+                New-Item -Path (Join-Path $morangosDir ".installed") -ItemType File -Force | Out-Null
+
+                Write-Host ""
+                Write-Host "Atualizacao concluida!" -ForegroundColor Green
+                Write-Host ""
+            } catch {
+                Show-Error "Falha ao atualizar. Verifique sua conexao com a internet."
+            }
+            # Continua para INICIAR APP
+        }
+        "3" {
+            # DESINSTALAR
+            Write-Host ""
+            Write-Host "================================================" -ForegroundColor Red
+            Write-Host "  DESINSTALAR MORANGOS" -ForegroundColor Red
+            Write-Host "================================================" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "ATENCAO: Isso vai remover:" -ForegroundColor Yellow
+            Write-Host "  - Todos os dados (pedidos, clientes, etc.)" -ForegroundColor DarkGray
+            Write-Host "  - O aplicativo inteiro" -ForegroundColor DarkGray
+            Write-Host "  - O atalho da area de trabalho" -ForegroundColor DarkGray
+            Write-Host ""
+            $confirm = Read-Host "Digite DESINSTALAR para confirmar"
+            if ($confirm -ne "DESINSTALAR") {
+                Write-Host "Desinstalacao cancelada." -ForegroundColor Green
+                Read-Host "Pressione Enter para fechar"
+                exit 0
+            }
+
+            Write-Host ""
+            Write-Host "Removendo atalho da area de trabalho..." -ForegroundColor Yellow
+            $desktopPath = [Environment]::GetFolderPath("Desktop")
+            $shortcutPath = Join-Path $desktopPath "Morangos.lnk"
+            if (Test-Path $shortcutPath) {
+                Remove-Item $shortcutPath -Force
+                Write-Host "Atalho removido!" -ForegroundColor Green
+            }
+
+            Write-Host "Parando processos do app..." -ForegroundColor Yellow
+            Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object {
+                $_.Path -like "*morangos*"
+            } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+            Write-Host "Removendo pasta do aplicativo..." -ForegroundColor Yellow
+            Set-Location $installDir
+            Remove-Item $morangosDir -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host ""
+            Write-Host "================================================" -ForegroundColor Green
+            Write-Host "  DESINSTALACAO CONCLUIDA!" -ForegroundColor Green
+            Write-Host "================================================" -ForegroundColor Green
+            Write-Host ""
+            Write-Host "O Node.js e Git nao foram removidos." -ForegroundColor DarkGray
+            Write-Host "Se quiser remove-los, use o Painel de Controle." -ForegroundColor DarkGray
+            Write-Host ""
+            Read-Host "Pressione Enter para fechar"
+            exit 0
+        }
+        default {
+            # INICIAR (opcao 1 ou qualquer outra)
+            # Continua para INICIAR APP
+        }
+    }
 } else {
     Write-Host ""
     Write-Host "================================================" -ForegroundColor Cyan
