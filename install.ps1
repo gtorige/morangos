@@ -28,13 +28,48 @@ function Refresh-Path {
 # STEP 1 — DETECTAR SE JA ESTA INSTALADO
 # ============================================================
 if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed"))) {
+    # Ler versao local do package.json
+    $localVersion = "desconhecida"
+    $pkgPath = Join-Path $morangosDir "package.json"
+    if (Test-Path $pkgPath) {
+        $pkgJson = Get-Content $pkgPath -Raw | ConvertFrom-Json
+        $localVersion = $pkgJson.version
+    }
+
+    # Checar versao remota
+    $remoteVersion = $null
+    $hasUpdate = $false
+    Write-Host ""
+    Write-Host "Verificando atualizacoes..." -ForegroundColor DarkGray
+    try {
+        $remotePkg = Invoke-WebRequest -Uri "https://raw.githubusercontent.com/gtorige/morangos/main/package.json" -UseBasicParsing -TimeoutSec 5 2>$null
+        $remotePkgJson = $remotePkg.Content | ConvertFrom-Json
+        $remoteVersion = $remotePkgJson.version
+        if ($remoteVersion -and $remoteVersion -ne $localVersion) {
+            $hasUpdate = $true
+        }
+    } catch {
+        # Sem internet ou erro — nao conseguiu checar
+    }
+
     Write-Host ""
     Write-Host "================================================" -ForegroundColor Cyan
     Write-Host "  MORANGOS - GERENCIADOR" -ForegroundColor Cyan
     Write-Host "================================================" -ForegroundColor Cyan
     Write-Host ""
+    Write-Host "  Versao instalada: v$localVersion" -ForegroundColor White
+    if ($hasUpdate) {
+        Write-Host "  Nova versao disponivel: v$remoteVersion" -ForegroundColor Yellow
+    } else {
+        Write-Host "  Voce esta na ultima versao!" -ForegroundColor Green
+    }
+    Write-Host ""
     Write-Host "  [1] Iniciar o app" -ForegroundColor White
-    Write-Host "  [2] Atualizar para ultima versao" -ForegroundColor White
+    if ($hasUpdate) {
+        Write-Host "  [2] Atualizar para v$remoteVersion" -ForegroundColor Yellow
+    } else {
+        Write-Host "  [2] Reinstalar/reparar" -ForegroundColor DarkGray
+    }
     Write-Host "  [3] Desinstalar" -ForegroundColor White
     Write-Host ""
     $choice = Read-Host "Escolha uma opcao (1/2/3)"
@@ -42,8 +77,21 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     switch ($choice) {
         "2" {
             # ATUALIZAR
+            if (-not $hasUpdate) {
+                Write-Host ""
+                $confirmReinstall = Read-Host "Nao ha atualizacao. Deseja reinstalar mesmo assim? (S/N)"
+                if ($confirmReinstall -ne "S" -and $confirmReinstall -ne "s") {
+                    Write-Host "Operacao cancelada." -ForegroundColor Green
+                    # Continua para INICIAR APP
+                    break
+                }
+            }
             Write-Host ""
-            Write-Host "Atualizando o aplicativo..." -ForegroundColor Yellow
+            if ($hasUpdate) {
+                Write-Host "Atualizando de v$localVersion para v$remoteVersion..." -ForegroundColor Yellow
+            } else {
+                Write-Host "Reinstalando o aplicativo..." -ForegroundColor Yellow
+            }
             Set-Location $morangosDir
             try {
                 # Salvar .env e dev.db antes de atualizar
