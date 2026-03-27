@@ -93,19 +93,41 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
                 Write-Host "Reinstalando o aplicativo..." -ForegroundColor Yellow
             }
             Set-Location $morangosDir
+
+            # Criar pasta de backups
+            $backupDir = Join-Path $morangosDir "backups"
+            if (-not (Test-Path $backupDir)) {
+                New-Item -Path $backupDir -ItemType Directory -Force | Out-Null
+            }
+
+            # Backup com timestamp
+            $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+            $dbPath = Join-Path $morangosDir "prisma\dev.db"
+            $envPath = Join-Path $morangosDir ".env"
+            $dbBackupPath = Join-Path $backupDir "dev_$timestamp.db"
+            $envBackupPath = Join-Path $backupDir "env_$timestamp.bak"
+
             try {
-                # Salvar .env e dev.db antes de atualizar
-                $envBackup = $null
-                $envPath = Join-Path $morangosDir ".env"
-                if (Test-Path $envPath) {
-                    $envBackup = Get-Content $envPath -Raw
-                }
-                $dbPath = Join-Path $morangosDir "prisma\dev.db"
-                $dbBackupPath = Join-Path $env:TEMP "morangos-dev.db.bak"
+                # Salvar backup do banco
                 if (Test-Path $dbPath) {
                     Copy-Item $dbPath $dbBackupPath -Force
+                    Write-Host "Backup do banco: backups\dev_$timestamp.db" -ForegroundColor Green
                 }
 
+                # Salvar backup do .env
+                $envBackup = $null
+                if (Test-Path $envPath) {
+                    $envBackup = Get-Content $envPath -Raw
+                    Set-Content -Path $envBackupPath -Value $envBackup -NoNewline
+                    Write-Host "Backup do .env: backups\env_$timestamp.bak" -ForegroundColor Green
+                }
+
+                # Limpar backups antigos (manter apenas os 5 mais recentes)
+                Get-ChildItem $backupDir -Filter "dev_*.db" | Sort-Object LastWriteTime -Descending | Select-Object -Skip 5 | Remove-Item -Force -ErrorAction SilentlyContinue
+                Get-ChildItem $backupDir -Filter "env_*.bak" | Sort-Object LastWriteTime -Descending | Select-Object -Skip 5 | Remove-Item -Force -ErrorAction SilentlyContinue
+
+                Write-Host ""
+                Write-Host "Baixando atualizacao..." -ForegroundColor Yellow
                 & git fetch origin 2>&1
                 & git reset --hard origin/main 2>&1
                 if ($LASTEXITCODE -ne 0) { throw "git pull failed" }
@@ -120,10 +142,10 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
                 # Restaurar banco de dados
                 if (Test-Path $dbBackupPath) {
                     Copy-Item $dbBackupPath $dbPath -Force
-                    Remove-Item $dbBackupPath -Force
                     Write-Host "Banco de dados restaurado!" -ForegroundColor Green
                 }
 
+                Write-Host ""
                 Write-Host "Instalando dependencias..." -ForegroundColor Yellow
                 & npm install 2>&1
                 if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
@@ -131,15 +153,32 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
                 Write-Host "Aplicando migracoes do banco..." -ForegroundColor Yellow
                 & npx prisma generate 2>&1
                 & npx prisma migrate deploy 2>&1
+                if ($LASTEXITCODE -ne 0) {
+                    # Migracao falhou — restaurar backup
+                    Write-Host "Erro na migracao! Restaurando backup..." -ForegroundColor Red
+                    if (Test-Path $dbBackupPath) {
+                        Copy-Item $dbBackupPath $dbPath -Force
+                        Write-Host "Banco restaurado do backup." -ForegroundColor Yellow
+                    }
+                    throw "migration failed"
+                }
 
-                # Recriar marcador e iniciar.ps1
+                # Recriar marcador
                 New-Item -Path (Join-Path $morangosDir ".installed") -ItemType File -Force | Out-Null
 
                 Write-Host ""
                 Write-Host "Atualizacao concluida!" -ForegroundColor Green
+                Write-Host "Backup salvo em: backups\dev_$timestamp.db" -ForegroundColor DarkGray
                 Write-Host ""
             } catch {
-                Show-Error "Falha ao atualizar. Verifique sua conexao com a internet."
+                # Restaurar banco em caso de qualquer erro
+                if (Test-Path $dbBackupPath) {
+                    Copy-Item $dbBackupPath $dbPath -Force -ErrorAction SilentlyContinue
+                }
+                if ($envBackup) {
+                    Set-Content -Path $envPath -Value $envBackup -NoNewline -ErrorAction SilentlyContinue
+                }
+                Show-Error "Falha ao atualizar. Seus dados foram restaurados do backup."
             }
             # Continua para INICIAR APP
         }
