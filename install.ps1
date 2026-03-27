@@ -355,7 +355,7 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     Set-Location $morangosDir
     Write-Host ""
     Write-Host "Instalando dependencias do projeto..." -ForegroundColor Yellow
-    Write-Host "(isso pode demorar alguns minutos)" -ForegroundColor DarkGray
+    Write-Host "Isso pode demorar alguns minutos..." -ForegroundColor DarkGray
     $prevEA = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
     & npm.cmd install 2>&1 | ForEach-Object { if ($_ -notmatch "^npm warn") { Write-Host $_ } }
     $npmExit = $LASTEXITCODE
@@ -401,9 +401,9 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     Write-Host "================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "O app usa 3 servicos do Google com uma unica chave:" -ForegroundColor White
-    Write-Host "  - Google Routes API (otimizacao de rotas)" -ForegroundColor DarkGray
-    Write-Host "  - Google Maps Embed API (preview do mapa)" -ForegroundColor DarkGray
-    Write-Host "  - Google Maps URLs (abrir no Google Maps)" -ForegroundColor DarkGray
+    Write-Host '  - Google Routes API - otimizacao de rotas' -ForegroundColor DarkGray
+    Write-Host '  - Google Maps Embed API - preview do mapa' -ForegroundColor DarkGray
+    Write-Host '  - Google Maps URLs - abrir no Google Maps' -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "Voce precisara criar uma API key gratuita do Google." -ForegroundColor White
     Write-Host "O plano gratuito da `$200 de credito por mes —" -ForegroundColor White
@@ -415,7 +415,7 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     Write-Host ""
     Write-Host "Siga estes passos no navegador:" -ForegroundColor White
     Write-Host "  1. Faca login com sua conta Google" -ForegroundColor DarkGray
-    Write-Host "  2. Crie um projeto (ex: Morangos)" -ForegroundColor DarkGray
+    Write-Host '  2. Crie um projeto, por exemplo "Morangos"' -ForegroundColor DarkGray
     Write-Host "  3. Va em APIs e Servicos, depois Biblioteca" -ForegroundColor DarkGray
     Write-Host "  4. Busque e ative: Routes API" -ForegroundColor DarkGray
     Write-Host "  5. Busque e ative: Maps Embed API" -ForegroundColor DarkGray
