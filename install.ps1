@@ -318,19 +318,24 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     # ============================================================
     Write-Host ""
     Write-Host "Baixando o aplicativo..." -ForegroundColor Yellow
-    Write-Host "Destino: $morangosDir" -ForegroundColor DarkGray
+    Write-Host "Instalando em: $morangosDir" -ForegroundColor DarkGray
     if (Test-Path $morangosDir) {
         Remove-Item $morangosDir -Recurse -Force -ErrorAction SilentlyContinue
     }
-    try {
-        Set-Location $installDir
-        $cloneOutput = & git clone https://github.com/gtorige/morangos.git "$morangosDir" 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Saida do git: $cloneOutput" -ForegroundColor Red
-            throw "git clone failed"
-        }
-    } catch {
-        Show-Error "Falha ao baixar o aplicativo. Verifique sua conexao com a internet.`nDetalhes: $_"
+    Set-Location $installDir
+    $prevErrorPref = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $cloneOutput = & git clone "https://github.com/gtorige/morangos.git" "$morangosDir" 2>&1
+    $cloneExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevErrorPref
+    if ($cloneExit -ne 0 -or -not (Test-Path (Join-Path $morangosDir "package.json"))) {
+        Write-Host ""
+        Write-Host "Saida do git:" -ForegroundColor Red
+        Write-Host "$cloneOutput" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Diretorio de instalacao: $installDir" -ForegroundColor Red
+        Write-Host "Diretorio do app: $morangosDir" -ForegroundColor Red
+        Show-Error "Falha ao baixar o aplicativo (exit code: $cloneExit)."
     }
     Write-Host "Aplicativo baixado!" -ForegroundColor Green
 
