@@ -4,9 +4,9 @@
 # ============================================================
 
 $ErrorActionPreference = "Stop"
-# Instalar na pasta do usuario (funciona quando executado via irm | iex)
+# Instalar na area de trabalho do usuario
 $installDir = $PSScriptRoot
-if (-not $installDir) { $installDir = $HOME }
+if (-not $installDir) { $installDir = [Environment]::GetFolderPath("Desktop") }
 $morangosDir = Join-Path $installDir "morangos"
 
 function Show-Error {
@@ -129,9 +129,13 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
 
                 Write-Host ""
                 Write-Host "Baixando atualizacao..." -ForegroundColor Yellow
-                & git fetch origin 2>&1
-                & git reset --hard origin/main 2>&1
-                if ($LASTEXITCODE -ne 0) { throw "git pull failed" }
+                $env:GIT_REDIRECT_STDERR = '2>&1'
+                $prevEP = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
+                & git fetch origin 2>&1 | Out-Null
+                & git reset --hard origin/main 2>&1 | Out-Null
+                $gitExit = $LASTEXITCODE
+                $ErrorActionPreference = $prevEP; $env:GIT_REDIRECT_STDERR = $null
+                if ($gitExit -ne 0) { throw "git pull failed" }
                 Write-Host "Codigo atualizado!" -ForegroundColor Green
 
                 # Restaurar .env
@@ -323,18 +327,21 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
         Remove-Item $morangosDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     Set-Location $installDir
+    # Git escreve progresso no stderr, que o PowerShell trata como erro
+    # quando $ErrorActionPreference = "Stop". Solucao: redirecionar stderr do git.
+    $env:GIT_REDIRECT_STDERR = '2>&1'
     $prevErrorPref = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    $cloneOutput = & git clone "https://github.com/gtorige/morangos.git" "$morangosDir" 2>&1
+    $ErrorActionPreference = "SilentlyContinue"
+    $cloneOutput = & git clone "https://github.com/gtorige/morangos.git" "$morangosDir" 2>&1 | Out-String
     $cloneExit = $LASTEXITCODE
     $ErrorActionPreference = $prevErrorPref
+    $env:GIT_REDIRECT_STDERR = $null
     if ($cloneExit -ne 0 -or -not (Test-Path (Join-Path $morangosDir "package.json"))) {
         Write-Host ""
         Write-Host "Saida do git:" -ForegroundColor Red
-        Write-Host "$cloneOutput" -ForegroundColor Red
+        Write-Host $cloneOutput -ForegroundColor Red
         Write-Host ""
-        Write-Host "Diretorio de instalacao: $installDir" -ForegroundColor Red
-        Write-Host "Diretorio do app: $morangosDir" -ForegroundColor Red
+        Write-Host "Diretorio: $morangosDir" -ForegroundColor Red
         Show-Error "Falha ao baixar o aplicativo (exit code: $cloneExit)."
     }
     Write-Host "Aplicativo baixado!" -ForegroundColor Green
