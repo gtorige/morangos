@@ -3,7 +3,9 @@
 # Sistema de Gerenciamento de Pedidos e Entregas
 # ============================================================
 
-$ErrorActionPreference = "Stop"
+# "Continue" evita que o PowerShell trate stderr de comandos nativos como erro fatal
+# (bug conhecido: git, npm, node escrevem progresso/warnings no stderr)
+$ErrorActionPreference = "Continue"
 # Sempre instalar na area de trabalho do usuario
 $installDir = [Environment]::GetFolderPath("Desktop")
 $morangosDir = Join-Path $installDir "morangos"
@@ -151,12 +153,12 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
 
                 Write-Host ""
                 Write-Host "Instalando dependencias..." -ForegroundColor Yellow
-                & npm install 2>&1
+                & npm install 2>&1 | Out-Host
                 if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
 
                 Write-Host "Aplicando migracoes do banco..." -ForegroundColor Yellow
-                & npx prisma generate 2>&1
-                & npx prisma migrate deploy 2>&1
+                & npx prisma generate 2>&1 | Out-Host
+                & npx prisma migrate deploy 2>&1 | Out-Host
                 if ($LASTEXITCODE -ne 0) {
                     # Migracao falhou — restaurar backup
                     Write-Host "Erro na migracao! Restaurando backup..." -ForegroundColor Red
@@ -352,12 +354,8 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     Write-Host ""
     Write-Host "Instalando dependencias do projeto..." -ForegroundColor Yellow
     Write-Host "(isso pode demorar alguns minutos)" -ForegroundColor DarkGray
-    try {
-        & npm install 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
-    } catch {
-        Show-Error "Falha ao instalar dependencias do projeto."
-    }
+    & npm install 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) { Show-Error "Falha ao instalar dependencias do projeto." }
     Write-Host "Dependencias instaladas!" -ForegroundColor Green
 
     # ============================================================
@@ -365,18 +363,10 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     # ============================================================
     Write-Host ""
     Write-Host "Configurando banco de dados..." -ForegroundColor Yellow
-    try {
-        & npx prisma generate 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "prisma generate failed" }
-    } catch {
-        Show-Error "Falha ao gerar cliente Prisma."
-    }
-    try {
-        & npx prisma migrate deploy 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "prisma migrate failed" }
-    } catch {
-        Show-Error "Falha ao aplicar migracoes do banco de dados."
-    }
+    & npx prisma generate 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) { Show-Error "Falha ao gerar cliente Prisma." }
+    & npx prisma migrate deploy 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) { Show-Error "Falha ao aplicar migracoes do banco de dados." }
     Write-Host "Banco de dados configurado!" -ForegroundColor Green
 
     # ============================================================
@@ -384,12 +374,8 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     # ============================================================
     Write-Host ""
     Write-Host "Criando arquivo de configuracao..." -ForegroundColor Yellow
-    try {
-        & node -e "const c=require('crypto');const fs=require('fs');fs.writeFileSync('.env','DATABASE_URL=\`"file:./dev.db\`"\nAUTH_SECRET='+c.randomBytes(32).toString('hex')+'\n');"
-        if ($LASTEXITCODE -ne 0) { throw "env creation failed" }
-    } catch {
-        Show-Error "Falha ao criar arquivo .env."
-    }
+    & node -e "const c=require('crypto');const fs=require('fs');fs.writeFileSync('.env','DATABASE_URL=\`"file:./dev.db\`"\nAUTH_SECRET='+c.randomBytes(32).toString('hex')+'\n');" 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) { Show-Error "Falha ao criar arquivo .env." }
     Write-Host "Arquivo .env criado!" -ForegroundColor Green
 
     # ============================================================
