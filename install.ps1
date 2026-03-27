@@ -18,7 +18,7 @@ function Show-Error {
     if (Test-Path (Join-Path $morangosDir ".installed")) {
         Remove-Item (Join-Path $morangosDir ".installed") -Force
     }
-    Read-Host "Pressione Enter para fechar"
+    Read-Host "Pressione Enter para continuar"
     exit 1
 }
 
@@ -203,7 +203,7 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
             $confirm = Read-Host "Digite DESINSTALAR para confirmar"
             if ($confirm -ne "DESINSTALAR") {
                 Write-Host "Desinstalacao cancelada." -ForegroundColor Green
-                Read-Host "Pressione Enter para fechar"
+                Read-Host "Pressione Enter para continuar"
                 exit 0
             }
 
@@ -232,7 +232,7 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
             Write-Host "O Node.js e Git nao foram removidos." -ForegroundColor DarkGray
             Write-Host "Se quiser remove-los, use o Painel de Controle." -ForegroundColor DarkGray
             Write-Host ""
-            Read-Host "Pressione Enter para fechar"
+            Read-Host "Pressione Enter para continuar"
             exit 0
         }
         default {
@@ -479,4 +479,4 @@ Write-Host ""
 Write-Host "App aberto no navegador!" -ForegroundColor Green
 Write-Host "Pode fechar esta janela." -ForegroundColor DarkGray
 Write-Host ""
-Read-Host "Pressione Enter para fechar"
+Read-Host "Pressione Enter para continuar"
