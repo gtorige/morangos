@@ -3,8 +3,10 @@
 # Sistema de Gerenciamento de Pedidos e Entregas
 # ============================================================
 
+# Permitir execucao de scripts nesta sessao (necessario para npm/npx)
+try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force } catch {}
+
 # "Continue" evita que o PowerShell trate stderr de comandos nativos como erro fatal
-# (bug conhecido: git, npm, node escrevem progresso/warnings no stderr)
 $ErrorActionPreference = "Continue"
 # Sempre instalar na area de trabalho do usuario
 $installDir = [Environment]::GetFolderPath("Desktop")
