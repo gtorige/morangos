@@ -4,8 +4,9 @@
 # ============================================================
 
 $ErrorActionPreference = "Stop"
+# Instalar na pasta do usuario (funciona quando executado via irm | iex)
 $installDir = $PSScriptRoot
-if (-not $installDir) { $installDir = Get-Location }
+if (-not $installDir) { $installDir = $HOME }
 $morangosDir = Join-Path $installDir "morangos"
 
 function Show-Error {
@@ -317,14 +318,19 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     # ============================================================
     Write-Host ""
     Write-Host "Baixando o aplicativo..." -ForegroundColor Yellow
+    Write-Host "Destino: $morangosDir" -ForegroundColor DarkGray
     if (Test-Path $morangosDir) {
         Remove-Item $morangosDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     try {
-        & git clone https://github.com/gtorige/morangos.git morangos 2>&1
-        if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
+        Set-Location $installDir
+        $cloneOutput = & git clone https://github.com/gtorige/morangos.git "$morangosDir" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Saida do git: $cloneOutput" -ForegroundColor Red
+            throw "git clone failed"
+        }
     } catch {
-        Show-Error "Falha ao baixar o aplicativo. Verifique sua conexao com a internet."
+        Show-Error "Falha ao baixar o aplicativo. Verifique sua conexao com a internet.`nDetalhes: $_"
     }
     Write-Host "Aplicativo baixado!" -ForegroundColor Green
 
