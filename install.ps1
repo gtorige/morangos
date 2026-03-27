@@ -153,12 +153,12 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
 
                 Write-Host ""
                 Write-Host "Instalando dependencias..." -ForegroundColor Yellow
-                & npm install 2>&1 | Out-Host
+                & npm.cmd install 2>&1 | Out-Host
                 if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
 
                 Write-Host "Aplicando migracoes do banco..." -ForegroundColor Yellow
-                & npx prisma generate 2>&1 | Out-Host
-                & npx prisma migrate deploy 2>&1 | Out-Host
+                & npx.cmd prisma generate 2>&1 | Out-Host
+                & npx.cmd prisma migrate deploy 2>&1 | Out-Host
                 if ($LASTEXITCODE -ne 0) {
                     # Migracao falhou — restaurar backup
                     Write-Host "Erro na migracao! Restaurando backup..." -ForegroundColor Red
@@ -354,7 +354,7 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     Write-Host ""
     Write-Host "Instalando dependencias do projeto..." -ForegroundColor Yellow
     Write-Host "(isso pode demorar alguns minutos)" -ForegroundColor DarkGray
-    & npm install 2>&1 | Out-Host
+    & npm.cmd install 2>&1 | Out-Host
     if ($LASTEXITCODE -ne 0) { Show-Error "Falha ao instalar dependencias do projeto." }
     Write-Host "Dependencias instaladas!" -ForegroundColor Green
 
@@ -363,9 +363,9 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     # ============================================================
     Write-Host ""
     Write-Host "Configurando banco de dados..." -ForegroundColor Yellow
-    & npx prisma generate 2>&1 | Out-Host
+    & npx.cmd prisma generate 2>&1 | Out-Host
     if ($LASTEXITCODE -ne 0) { Show-Error "Falha ao gerar cliente Prisma." }
-    & npx prisma migrate deploy 2>&1 | Out-Host
+    & npx.cmd prisma migrate deploy 2>&1 | Out-Host
     if ($LASTEXITCODE -ne 0) { Show-Error "Falha ao aplicar migracoes do banco de dados." }
     Write-Host "Banco de dados configurado!" -ForegroundColor Green
 
@@ -374,7 +374,7 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     # ============================================================
     Write-Host ""
     Write-Host "Criando arquivo de configuracao..." -ForegroundColor Yellow
-    & node -e "const c=require('crypto');const fs=require('fs');fs.writeFileSync('.env','DATABASE_URL=\`"file:./dev.db\`"\nAUTH_SECRET='+c.randomBytes(32).toString('hex')+'\n');" 2>&1 | Out-Host
+    & node.exe -e "const c=require('crypto');const fs=require('fs');fs.writeFileSync('.env','DATABASE_URL=\`"file:./dev.db\`"\nAUTH_SECRET='+c.randomBytes(32).toString('hex')+'\n');" 2>&1 | Out-Host
     if ($LASTEXITCODE -ne 0) { Show-Error "Falha ao criar arquivo .env." }
     Write-Host "Arquivo .env criado!" -ForegroundColor Green
 
@@ -430,7 +430,7 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     $iniciarContent = @"
 `$appDir = "$morangosDir"
 Set-Location `$appDir
-Start-Process powershell -ArgumentList "-Command", "Set-Location '`$appDir'; npm run dev" -WindowStyle Minimized
+Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -Command", "Set-Location '`$appDir'; npm.cmd run dev" -WindowStyle Minimized
 Start-Sleep -Seconds 8
 Start-Process "http://localhost:3000"
 "@
@@ -471,7 +471,7 @@ Start-Process "http://localhost:3000"
 # ============================================================
 Set-Location $morangosDir
 Write-Host "Iniciando o aplicativo..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-Command", "Set-Location '$morangosDir'; npm run dev" -WindowStyle Minimized
+Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -Command", "Set-Location '$morangosDir'; npm.cmd run dev" -WindowStyle Minimized
 Write-Host "Aguardando o app iniciar..." -ForegroundColor DarkGray
 Start-Sleep -Seconds 8
 Start-Process "http://localhost:3000"
