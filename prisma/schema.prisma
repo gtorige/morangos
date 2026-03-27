@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Cliente {
+  id                  Int      @id @default(autoincrement())
+  nome                String
+  telefone            String   @default("")
+  rua                 String   @default("")
+  numero              String   @default("")
+  bairro              String   @default("")
+  cidade              String   @default("")
+  observacoes         String   @default("")
+  pedidos             Pedido[]
+  pedidosRecorrentes  PedidoRecorrente[]
+
+  @@map("clientes")
+}
+
+model Produto {
+  id               Int          @id @default(autoincrement())
+  nome             String
+  preco            Float
+  promocoes        Promocao[]
+  itens            PedidoItem[]
+  itensRecorrentes PedidoRecorrenteItem[]
+
+  @@map("produtos")
+}
+
+model Promocao {
+  id                Int      @id @default(autoincrement())
+  nome              String
+  produtoId         Int      @map("produto_id")
+  produto           Produto  @relation(fields: [produtoId], references: [id])
+  tipo              String   @default("desconto")
+  precoPromocional  Float    @default(0) @map("preco_promocional")
+  leveQuantidade    Int?     @map("leve_quantidade")
+  pagueQuantidade   Int?     @map("pague_quantidade")
+  dataInicio        String   @map("data_inicio")
+  dataFim           String   @map("data_fim")
+  ativo             Boolean  @default(true)
+
+  @@index([produtoId])
+  @@map("promocoes")
+}
+
+model FormaPagamento {
+  id                  Int                @id @default(autoincrement())
+  nome                String
+  pedidos             Pedido[]
+  pedidosRecorrentes  PedidoRecorrente[]
+
+  @@map("formas_pagamento")
+}
+
+model Pedido {
+  id                  Int             @id @default(autoincrement())
+  clienteId           Int             @map("cliente_id")
+  cliente             Cliente         @relation(fields: [clienteId], references: [id])
+  dataPedido          String          @map("data_pedido")
+  dataEntrega         String          @map("data_entrega")
+  formaPagamentoId    Int?            @map("forma_pagamento_id")
+  formaPagamento      FormaPagamento? @relation(fields: [formaPagamentoId], references: [id])
+  total               Float           @default(0)
+  valorPago           Float           @default(0) @map("valor_pago")
+  situacaoPagamento   String          @default("Pendente") @map("situacao_pagamento")
+  statusEntrega       String          @default("Pendente") @map("status_entrega")
+  taxaEntrega         Float           @default(0) @map("taxa_entrega")
+  ordemRota           Int?            @map("ordem_rota")
+  observacoes         String          @default("")
+  recorrenteId        Int?            @map("recorrente_id")
+  recorrente          PedidoRecorrente? @relation(fields: [recorrenteId], references: [id])
+  itens               PedidoItem[]
+
+  @@index([clienteId])
+  @@index([dataEntrega])
+  @@map("pedidos")
+}
+
+model PedidoItem {
+  id            Int     @id @default(autoincrement())
+  pedidoId      Int     @map("pedido_id")
+  pedido        Pedido  @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  produtoId     Int     @map("produto_id")
+  produto       Produto @relation(fields: [produtoId], references: [id])
+  quantidade    Float
+  precoUnitario Float   @map("preco_unitario")
+  subtotal      Float
+
+  @@index([pedidoId])
+  @@index([produtoId])
+  @@map("pedido_itens")
+}
+
+model Fornecedor {
+  id   Int    @id @default(autoincrement())
+  nome String @unique
+  contas Conta[]
+
+  @@map("fornecedores")
+}
+
+model Conta {
+  id            Int          @id @default(autoincrement())
+  fornecedorId  Int?         @map("fornecedor_id")
+  fornecedor    Fornecedor?  @relation(fields: [fornecedorId], references: [id])
+  fornecedorNome String      @default("") @map("fornecedor_nome")
+  categoria     String       @default("")
+  valor         Float
+  vencimento    String
+  situacao      String       @default("Pendente")
+
+  @@index([fornecedorId])
+  @@map("contas")
+}
+
+model Usuario {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  nome      String   @default("")
+  senha     String
+  isAdmin   Boolean  @default(false) @map("is_admin")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("usuarios")
+}
+
+model PedidoRecorrente {
+  id               Int                    @id @default(autoincrement())
+  clienteId        Int                    @map("cliente_id")
+  cliente          Cliente                @relation(fields: [clienteId], references: [id])
+  formaPagamentoId Int?                   @map("forma_pagamento_id")
+  formaPagamento   FormaPagamento?        @relation(fields: [formaPagamentoId], references: [id])
+  diasSemana       String                 @map("dias_semana")
+  dataInicio       String                 @map("data_inicio")
+  dataFim          String?                @map("data_fim")
+  taxaEntrega      Float                  @default(0) @map("taxa_entrega")
+  observacoes      String                 @default("")
+  ativo            Boolean                @default(true)
+  itens            PedidoRecorrenteItem[]
+  pedidosGerados   Pedido[]
+
+  @@index([clienteId])
+  @@map("pedidos_recorrentes")
+}
+
+model PedidoRecorrenteItem {
+  id                 Int              @id @default(autoincrement())
+  pedidoRecorrenteId Int              @map("pedido_recorrente_id")
+  pedidoRecorrente   PedidoRecorrente @relation(fields: [pedidoRecorrenteId], references: [id], onDelete: Cascade)
+  produtoId          Int              @map("produto_id")
+  produto            Produto          @relation(fields: [produtoId], references: [id])
+  quantidade         Float
+  precoManual        Float?           @map("preco_manual")
+
+  @@index([pedidoRecorrenteId])
+  @@map("pedido_recorrente_itens")
+}
+
+model Configuracao {
+  chave String @id
+  valor String
+
+  @@map("configuracoes")
+}
