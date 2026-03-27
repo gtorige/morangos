@@ -356,29 +356,41 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     Write-Host ""
     Write-Host "Instalando dependencias do projeto..." -ForegroundColor Yellow
     Write-Host "(isso pode demorar alguns minutos)" -ForegroundColor DarkGray
-    & npm.cmd install 2>&1 | Out-Host
-    if ($LASTEXITCODE -ne 0) { Show-Error "Falha ao instalar dependencias do projeto." }
+    $prevEA = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
+    & npm.cmd install 2>&1 | ForEach-Object { if ($_ -notmatch "^npm warn") { Write-Host $_ } }
+    $npmExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEA
+    if ($npmExit -ne 0) { Show-Error "Falha ao instalar dependencias do projeto." }
     Write-Host "Dependencias instaladas!" -ForegroundColor Green
 
     # ============================================================
-    # STEP 6 — CONFIGURAR PRISMA
-    # ============================================================
-    Write-Host ""
-    Write-Host "Configurando banco de dados..." -ForegroundColor Yellow
-    & npx.cmd prisma generate 2>&1 | Out-Host
-    if ($LASTEXITCODE -ne 0) { Show-Error "Falha ao gerar cliente Prisma." }
-    & npx.cmd prisma migrate deploy 2>&1 | Out-Host
-    if ($LASTEXITCODE -ne 0) { Show-Error "Falha ao aplicar migracoes do banco de dados." }
-    Write-Host "Banco de dados configurado!" -ForegroundColor Green
-
-    # ============================================================
-    # STEP 7 — CRIAR ARQUIVO .ENV
+    # STEP 6 — CRIAR ARQUIVO .ENV (antes do Prisma, que precisa do DATABASE_URL)
     # ============================================================
     Write-Host ""
     Write-Host "Criando arquivo de configuracao..." -ForegroundColor Yellow
+    $prevEA = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
     & node.exe -e "const c=require('crypto');const fs=require('fs');fs.writeFileSync('.env','DATABASE_URL=\`"file:./dev.db\`"\nAUTH_SECRET='+c.randomBytes(32).toString('hex')+'\n');" 2>&1 | Out-Host
-    if ($LASTEXITCODE -ne 0) { Show-Error "Falha ao criar arquivo .env." }
+    $nodeExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEA
+    if ($nodeExit -ne 0) { Show-Error "Falha ao criar arquivo .env." }
     Write-Host "Arquivo .env criado!" -ForegroundColor Green
+
+    # ============================================================
+    # STEP 7 — CONFIGURAR PRISMA
+    # ============================================================
+    Write-Host ""
+    Write-Host "Configurando banco de dados..." -ForegroundColor Yellow
+    $prevEA = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
+    & npx.cmd prisma generate 2>&1 | Out-Host
+    $prismaGenExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEA
+    if ($prismaGenExit -ne 0) { Show-Error "Falha ao gerar cliente Prisma." }
+    $prevEA = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
+    & npx.cmd prisma migrate deploy 2>&1 | Out-Host
+    $prismaMigExit = $LASTEXITCODE
+    $ErrorActionPreference = $prevEA
+    if ($prismaMigExit -ne 0) { Show-Error "Falha ao aplicar migracoes do banco de dados." }
+    Write-Host "Banco de dados configurado!" -ForegroundColor Green
 
     # ============================================================
     # STEP 7B — CONFIGURACAO DO GOOGLE MAPS
