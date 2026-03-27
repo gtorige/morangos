@@ -416,10 +416,10 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     Write-Host "Siga estes passos no navegador:" -ForegroundColor White
     Write-Host "  1. Faca login com sua conta Google" -ForegroundColor DarkGray
     Write-Host "  2. Crie um projeto (ex: Morangos)" -ForegroundColor DarkGray
-    Write-Host "  3. Va em APIs e Servicos > Biblioteca" -ForegroundColor DarkGray
+    Write-Host "  3. Va em APIs e Servicos, depois Biblioteca" -ForegroundColor DarkGray
     Write-Host "  4. Busque e ative: Routes API" -ForegroundColor DarkGray
     Write-Host "  5. Busque e ative: Maps Embed API" -ForegroundColor DarkGray
-    Write-Host "  6. Va em Credenciais > Criar Credencial > Chave de API" -ForegroundColor DarkGray
+    Write-Host "  6. Va em Credenciais, Criar Credencial, Chave de API" -ForegroundColor DarkGray
     Write-Host "  7. Copie a chave gerada" -ForegroundColor DarkGray
     Write-Host ""
     while ($true) {
