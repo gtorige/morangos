@@ -4,9 +4,8 @@
 # ============================================================
 
 $ErrorActionPreference = "Stop"
-# Instalar na area de trabalho do usuario
-$installDir = $PSScriptRoot
-if (-not $installDir) { $installDir = [Environment]::GetFolderPath("Desktop") }
+# Sempre instalar na area de trabalho do usuario
+$installDir = [Environment]::GetFolderPath("Desktop")
 $morangosDir = Join-Path $installDir "morangos"
 
 function Show-Error {
