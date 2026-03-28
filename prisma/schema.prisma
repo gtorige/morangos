@@ -128,6 +128,7 @@ model Conta {
   categoria     String       @default("")
   categoriaId   Int?         @map("categoria_id")
   categoriaRef  Categoria?   @relation(fields: [categoriaId], references: [id])
+  subcategoria  String       @default("") @map("subcategoria")
   valor         Float
   vencimento    String
   situacao      String       @default("Pendente")

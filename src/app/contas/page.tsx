@@ -30,6 +30,7 @@ interface Conta {
   fornecedorNome: string;
   categoria: string;
   categoriaId: number | null;
+  subcategoria: string;
   valor: number;
   vencimento: string;
   situacao: string;
@@ -38,6 +39,7 @@ interface Conta {
 interface ContaForm {
   fornecedorNome: string;
   categoriaId: string;
+  subcategoria: string;
   valor: string;
   vencimento: string;
   situacao: string;
@@ -60,6 +62,7 @@ type Tab = "contas" | "fornecedores" | "categorias";
 const emptyContaForm: ContaForm = {
   fornecedorNome: "",
   categoriaId: "",
+  subcategoria: "",
   valor: "",
   vencimento: "",
   situacao: "Pendente",
@@ -157,6 +160,7 @@ export default function ContasPage() {
     setContaForm({
       fornecedorNome: item.fornecedorNome,
       categoriaId: item.categoriaId ? String(item.categoriaId) : "",
+      subcategoria: item.subcategoria ?? "",
       valor: String(item.valor),
       vencimento: item.vencimento,
       situacao: item.situacao,
@@ -173,6 +177,7 @@ export default function ContasPage() {
       fornecedorNome: contaForm.fornecedorNome,
       categoria: catNome,
       categoriaId: catId,
+      subcategoria: contaForm.subcategoria,
       valor: parseFloat(contaForm.valor),
       vencimento: contaForm.vencimento,
       situacao: contaForm.situacao,
@@ -408,6 +413,7 @@ export default function ContasPage() {
                 <TableRow>
                   <TableHead>Fornecedor</TableHead>
                   <TableHead className="hidden sm:table-cell">Categoria</TableHead>
+                  <TableHead className="hidden md:table-cell">Tipo</TableHead>
                   <TableHead>Valor</TableHead>
                   <TableHead className="hidden sm:table-cell">Vencimento</TableHead>
                   <TableHead>Situação</TableHead>
@@ -417,17 +423,21 @@ export default function ContasPage() {
               <TableBody>
                 {contasLoading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Carregando...</TableCell>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Carregando...</TableCell>
                   </TableRow>
                 ) : contas.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Nenhuma conta cadastrada</TableCell>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Nenhuma conta cadastrada</TableCell>
                   </TableRow>
                 ) : (
                   contas.map((item) => (
                     <TableRow key={item.id} className={`cursor-pointer hover:bg-accent/50 transition-colors ${getRowClassName(item)}`} onDoubleClick={() => openEditConta(item)}>
                       <TableCell className="font-medium">{item.fornecedorNome}</TableCell>
                       <TableCell className="hidden sm:table-cell">{getCategoriaNome(item)}</TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {item.subcategoria === "CAPEX" && <Badge className="bg-blue-600 text-white text-xs">CAPEX</Badge>}
+                        {item.subcategoria === "OPEX" && <Badge className="bg-orange-600 text-white text-xs">OPEX</Badge>}
+                      </TableCell>
                       <TableCell>{formatPrice(item.valor)}</TableCell>
                       <TableCell className="hidden sm:table-cell">{formatDate(item.vencimento)}</TableCell>
                       <TableCell>{getSituacaoBadge(item)}</TableCell>
@@ -475,6 +485,19 @@ export default function ContasPage() {
                     {categorias.map((c) => (
                       <option key={c.id} value={c.id}>{c.nome}</option>
                     ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="subcategoria">Tipo (CAPEX/OPEX)</Label>
+                  <select
+                    id="subcategoria"
+                    value={contaForm.subcategoria}
+                    onChange={(e) => setContaForm({ ...contaForm, subcategoria: e.target.value })}
+                    className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+                  >
+                    <option value="">Sem classificação</option>
+                    <option value="CAPEX">CAPEX (Investimento)</option>
+                    <option value="OPEX">OPEX (Operacional)</option>
                   </select>
                 </div>
                 <div className="space-y-2">
