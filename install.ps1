@@ -106,7 +106,12 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
                     break
                 }
             }
+            # Parar o app antes de atualizar (libera arquivos travados)
             Write-Host ""
+            Write-Host "Parando o app..." -ForegroundColor DarkGray
+            Get-Process -Name "node" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+
             if ($hasUpdate) {
                 Write-Host "Atualizando de v$localVersion para v$remoteVersion..." -ForegroundColor Yellow
             } else {
