@@ -55,7 +55,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 const navItems = [
   { href: "/resumo", label: "Resumo", icon: BarChart3 },
-  { href: "/pedidos/novo", label: "Novo Pedido", icon: Plus },
+  { href: "/pedidos/novo", label: "Novo Pedido", icon: Plus, highlight: true },
   { href: "/pedidos", label: "Pedidos", icon: ClipboardList },
   { href: "/recorrentes", label: "Pedidos Recorrentes", icon: Repeat },
   { href: "/clientes", label: "Clientes", icon: Users },
@@ -259,6 +259,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           const isActive = pathname.startsWith(item.href);
           const isDragging = dragIndex === index;
           const isOver = dragOverIndex === index && dragIndex !== index;
+          const isHighlight = (item as { highlight?: boolean }).highlight;
           return (
             <div
               key={item.href}
@@ -286,6 +287,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                 className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                   isActive
                     ? "bg-primary text-primary-foreground"
+                    : isHighlight
+                    ? "bg-primary/15 text-primary hover:bg-primary/25"
                     : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                 } ${editMode ? "border border-border/50 cursor-grab active:cursor-grabbing" : ""}`}
               >

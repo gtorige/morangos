@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,19 +38,25 @@ export default function LoginPage() {
       // Continue with sign in attempt
     }
 
-    const result = await signIn("credentials", {
-      username: username.trim(),
-      password: senha,
-      redirect: false,
-    });
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: username.trim(), password: senha }),
+      });
 
-    if (result?.error) {
-      setError("Usuário ou senha incorretos.");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Usuário ou senha incorretos.");
+        setSigning(false);
+        return;
+      }
+
+      window.location.href = "/";
+    } catch {
+      setError("Erro de conexão. Tente novamente.");
       setSigning(false);
-      return;
     }
-
-    window.location.href = "/";
   }
 
   return (
