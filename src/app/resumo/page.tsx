@@ -65,6 +65,7 @@ function todayStr() { return new Date().toISOString().slice(0, 10) }
 
 type Periodo = "dia" | "semana" | "mes" | "ano" | "custom";
 type Tab = "geral" | "financeiro";
+type ViewMode = "realizado" | "projetado";
 
 function Var({ v }: { v: number }) {
   if (Math.abs(v) < 0.5) return <span className="flex items-center gap-1 text-xs text-muted-foreground"><Minus className="size-3" /> 0%</span>;
@@ -112,6 +113,7 @@ export default function ResumoPage() {
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("geral");
+  const [viewMode, setViewMode] = useState<ViewMode>("projetado");
 
   const fetchResumo = useCallback(async () => {
     try {
@@ -138,6 +140,20 @@ export default function ResumoPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Resumo</h1>
         </div>
         <div className="flex gap-1.5">
+          <div className="flex rounded-lg border border-border overflow-hidden">
+            <button
+              onClick={() => setViewMode("realizado")}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === "realizado" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              Realizado
+            </button>
+            <button
+              onClick={() => setViewMode("projetado")}
+              className={`px-3 py-1.5 text-xs font-medium transition-colors border-l border-border ${viewMode === "projetado" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              + Projetado
+            </button>
+          </div>
           <Button variant="outline" size="sm" onClick={() => window.open("/api/exportar?tipo=tudo", "_blank")}>
             <Download className="size-3.5" /> Exportar
           </Button>
@@ -186,9 +202,9 @@ export default function ResumoPage() {
       ) : !resumo ? (
         <Empty t="Erro ao carregar resumo." />
       ) : tab === "geral" ? (
-        <GeralTab resumo={resumo} periodo={periodo} periodoLabels={periodoLabels} isAno={isAno} />
+        <GeralTab resumo={resumo} periodo={periodo} periodoLabels={periodoLabels} isAno={isAno} viewMode={viewMode} />
       ) : (
-        <FinanceiroTab resumo={resumo} periodo={periodo} periodoLabels={periodoLabels} />
+        <FinanceiroTab resumo={resumo} periodo={periodo} periodoLabels={periodoLabels} viewMode={viewMode} />
       )}
     </div>
   );
@@ -198,7 +214,7 @@ export default function ResumoPage() {
 // GERAL TAB
 // ══════════════════════════════════════════
 
-function GeralTab({ resumo, periodo, periodoLabels, isAno }: { resumo: Resumo; periodo: Periodo; periodoLabels: Record<Periodo, string>; isAno: boolean }) {
+function GeralTab({ resumo, periodo, periodoLabels, isAno, viewMode }: { resumo: Resumo; periodo: Periodo; periodoLabels: Record<Periodo, string>; isAno: boolean; viewMode: ViewMode }) {
   const router = useRouter();
 
   return (
@@ -207,12 +223,12 @@ function GeralTab({ resumo, periodo, periodoLabels, isAno }: { resumo: Resumo; p
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         {[
           { label: "Pedidos", value: String(resumo.totalPedidos), icon: Package, variacao: resumo.comparativo.variacaoPedidos, href: "/pedidos" },
-          { label: "Vendido", value: fmt(resumo.totalVendido), icon: DollarSign, variacao: resumo.comparativo.variacaoVendas },
+          { label: "Vendido", value: fmt(resumo.totalVendido), icon: DollarSign, variacao: resumo.comparativo.variacaoVendas, hidden: viewMode === "realizado" },
           { label: "Recebido", value: fmt(resumo.totalRecebido), icon: TrendingUp, variacao: resumo.comparativo.variacaoRecebido },
-          { label: "Pendente", value: fmt(resumo.totalPendente), icon: Clock },
+          { label: "Pendente", value: fmt(resumo.totalPendente), icon: Clock, hidden: viewMode === "realizado" },
           { label: "Ticket Médio", value: fmt(resumo.ticketMedio), icon: Receipt, variacao: resumo.comparativo.variacaoTicketMedio },
           { label: "Tx. Entrega", value: fmt(resumo.totalTaxaEntrega), icon: Truck },
-        ].map((kpi) => {
+        ].filter((kpi) => !(kpi as { hidden?: boolean }).hidden).map((kpi) => {
           const K = kpi.icon;
           return (
             <Card key={kpi.label} className={kpi.href ? "cursor-pointer hover:border-primary/30" : ""} onClick={kpi.href ? () => router.push(kpi.href!) : undefined}>
@@ -426,8 +442,9 @@ function GeralTab({ resumo, periodo, periodoLabels, isAno }: { resumo: Resumo; p
 // FINANCEIRO TAB
 // ══════════════════════════════════════════
 
-function FinanceiroTab({ resumo, periodo, periodoLabels }: { resumo: Resumo; periodo: Periodo; periodoLabels: Record<Periodo, string> }) {
+function FinanceiroTab({ resumo, periodo, periodoLabels, viewMode }: { resumo: Resumo; periodo: Periodo; periodoLabels: Record<Periodo, string>; viewMode: ViewMode }) {
   const f = resumo.financeiro;
+  const soRealizado = viewMode === "realizado";
   const maxBar = Math.max(f.receita, f.despesas, 1);
   const receitaProjetada = f.aReceber;
   const resultadoRealizado = f.recebido - f.despesasRealizadas;
@@ -453,13 +470,15 @@ function FinanceiroTab({ resumo, periodo, periodoLabels }: { resumo: Resumo; per
           </CardContent>
         </Card>
 
-        <Card className="border-yellow-500/30">
-          <CardContent className="py-3">
-            <p className="text-xs text-muted-foreground">Despesas Projetadas</p>
-            <p className="text-xl font-bold text-yellow-500">{fmt(f.despesasProjetadas)}</p>
-            <p className="text-xs text-muted-foreground">{f.contasPendentesQtd} conta{f.contasPendentesQtd !== 1 ? "s" : ""} pendente{f.contasPendentesQtd !== 1 ? "s" : ""}</p>
-          </CardContent>
-        </Card>
+        {!soRealizado && (
+          <Card className="border-yellow-500/30">
+            <CardContent className="py-3">
+              <p className="text-xs text-muted-foreground">Despesas Projetadas</p>
+              <p className="text-xl font-bold text-yellow-500">{fmt(f.despesasProjetadas)}</p>
+              <p className="text-xs text-muted-foreground">{f.contasPendentesQtd} conta{f.contasPendentesQtd !== 1 ? "s" : ""} pendente{f.contasPendentesQtd !== 1 ? "s" : ""}</p>
+            </CardContent>
+          </Card>
+        )}
 
         {f.despesasVencidas > 0 && (
           <Card className="border-red-500/30">
@@ -471,21 +490,25 @@ function FinanceiroTab({ resumo, periodo, periodoLabels }: { resumo: Resumo; per
           </Card>
         )}
 
-        <Card>
-          <CardContent className="py-3">
-            <p className="text-xs text-muted-foreground">Lucro Estimado</p>
-            <p className={`text-xl font-bold ${f.lucroEstimado >= 0 ? "text-green-500" : "text-red-500"}`}>{fmt(f.lucroEstimado)}</p>
-            <p className="text-xs text-muted-foreground">receita - despesas totais</p>
-          </CardContent>
-        </Card>
+        {!soRealizado && (
+          <Card>
+            <CardContent className="py-3">
+              <p className="text-xs text-muted-foreground">Lucro Estimado</p>
+              <p className={`text-xl font-bold ${f.lucroEstimado >= 0 ? "text-green-500" : "text-red-500"}`}>{fmt(f.lucroEstimado)}</p>
+              <p className="text-xs text-muted-foreground">receita - despesas totais</p>
+            </CardContent>
+          </Card>
+        )}
 
-        <Card>
-          <CardContent className="py-3">
-            <p className="text-xs text-muted-foreground">A Receber</p>
-            <p className="text-xl font-bold text-yellow-500">{fmt(f.aReceber)}</p>
-            <p className="text-xs text-muted-foreground">vendido - recebido</p>
-          </CardContent>
-        </Card>
+        {!soRealizado && (
+          <Card>
+            <CardContent className="py-3">
+              <p className="text-xs text-muted-foreground">A Receber</p>
+              <p className="text-xl font-bold text-yellow-500">{fmt(f.aReceber)}</p>
+              <p className="text-xs text-muted-foreground">vendido - recebido</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Revenue vs Expenses */}
@@ -498,17 +521,17 @@ function FinanceiroTab({ resumo, periodo, periodoLabels }: { resumo: Resumo; per
         </CardHeader>
         <CardContent className="space-y-3">
           {[
-            { label: "Receita (vendas)", value: f.receita, color: "bg-green-500", textColor: "text-green-500" },
+            { label: "Receita (vendas)", value: f.receita, color: "bg-green-500", textColor: "text-green-500", hidden: soRealizado },
             { label: "Recebido", value: f.recebido, color: "bg-teal-500", textColor: "text-teal-500" },
             { label: "Despesas realizadas", value: f.despesasRealizadas, color: "bg-red-400", textColor: "text-red-400" },
-            { label: "Despesas projetadas", value: f.despesasProjetadas, color: "bg-yellow-500", textColor: "text-yellow-500" },
-          ].map((row) => (
+            { label: "Despesas projetadas", value: f.despesasProjetadas, color: "bg-yellow-500", textColor: "text-yellow-500", hidden: soRealizado },
+          ].filter((r) => !r.hidden).map((row) => (
             <div key={row.label} className="space-y-1">
               <div className="flex justify-between text-sm"><span>{row.label}</span><span className={`font-medium ${row.textColor}`}>{fmt(row.value)}</span></div>
               <Bar value={row.value} max={maxBar} color={row.color} />
             </div>
           ))}
-          {f.despesasVencidas > 0 && (
+          {!soRealizado && f.despesasVencidas > 0 && (
             <div className="space-y-1">
               <div className="flex justify-between text-sm"><span className="text-red-500">Despesas vencidas</span><span className="font-medium text-red-500">{fmt(f.despesasVencidas)}</span></div>
               <Bar value={f.despesasVencidas} max={maxBar} color="bg-red-500" />
@@ -529,30 +552,30 @@ function FinanceiroTab({ resumo, periodo, periodoLabels }: { resumo: Resumo; per
           <CardContent>
             <div className="space-y-1">
               {/* Header */}
-              <div className="grid grid-cols-4 gap-2 text-xs text-muted-foreground font-medium pb-1 border-b border-border">
+              <div className={`grid gap-2 text-xs text-muted-foreground font-medium pb-1 border-b border-border ${soRealizado ? "grid-cols-2" : "grid-cols-4"}`}>
                 <span>Categoria</span>
                 <span className="text-right">Realizado</span>
-                <span className="text-right">Projetado</span>
-                <span className="text-right">Total</span>
+                {!soRealizado && <span className="text-right">Projetado</span>}
+                {!soRealizado && <span className="text-right">Total</span>}
               </div>
               {/* Rows */}
               {f.despesasPorCategoria.map((cat) => {
                 const total = cat.realizado + cat.projetado;
                 return (
-                  <div key={cat.categoria} className="grid grid-cols-4 gap-2 text-sm py-1.5 border-b border-border/50 last:border-0">
+                  <div key={cat.categoria} className={`grid gap-2 text-sm py-1.5 border-b border-border/50 last:border-0 ${soRealizado ? "grid-cols-2" : "grid-cols-4"}`}>
                     <span className="truncate">{cat.categoria}</span>
                     <span className="text-right text-red-400">{fmt(cat.realizado)}</span>
-                    <span className="text-right text-yellow-500">{fmt(cat.projetado)}</span>
-                    <span className="text-right font-medium">{fmt(total)}</span>
+                    {!soRealizado && <span className="text-right text-yellow-500">{fmt(cat.projetado)}</span>}
+                    {!soRealizado && <span className="text-right font-medium">{fmt(total)}</span>}
                   </div>
                 );
               })}
               {/* Total row */}
-              <div className="grid grid-cols-4 gap-2 text-sm py-1.5 border-t border-border font-medium">
+              <div className={`grid gap-2 text-sm py-1.5 border-t border-border font-medium ${soRealizado ? "grid-cols-2" : "grid-cols-4"}`}>
                 <span>Total</span>
                 <span className="text-right text-red-400">{fmt(f.despesasRealizadas)}</span>
-                <span className="text-right text-yellow-500">{fmt(f.despesasProjetadas)}</span>
-                <span className="text-right">{fmt(f.despesas)}</span>
+                {!soRealizado && <span className="text-right text-yellow-500">{fmt(f.despesasProjetadas)}</span>}
+                {!soRealizado && <span className="text-right">{fmt(f.despesas)}</span>}
               </div>
             </div>
           </CardContent>
@@ -586,13 +609,13 @@ function FinanceiroTab({ resumo, periodo, periodoLabels }: { resumo: Resumo; per
           <div className="space-y-2 text-sm">
             {[
               { label: "Receita (Realizado)", value: fmt(f.recebido), style: "text-teal-500 font-medium" },
-              { label: "Receita (Projetado)", value: fmt(receitaProjetada), style: "text-yellow-500" },
+              ...(!soRealizado ? [{ label: "Receita (Projetado)", value: fmt(receitaProjetada), style: "text-yellow-500" }] : []),
               { label: "", value: "", style: "border-t border-border pt-2" },
               { label: "Despesas (Realizado)", value: fmt(f.despesasRealizadas), style: "text-red-400" },
-              { label: "Despesas (Projetado)", value: fmt(f.despesasProjetadas), style: "text-yellow-500" },
+              ...(!soRealizado ? [{ label: "Despesas (Projetado)", value: fmt(f.despesasProjetadas), style: "text-yellow-500" }] : []),
               { label: "", value: "", style: "border-t border-border pt-2" },
               { label: "Resultado (Realizado)", value: fmt(resultadoRealizado), style: resultadoRealizado >= 0 ? "text-green-500 font-bold" : "text-red-500 font-bold" },
-              { label: "Resultado (Projetado)", value: fmt(resultadoProjetado), style: resultadoProjetado >= 0 ? "text-green-500 font-bold" : "text-red-500 font-bold" },
+              ...(!soRealizado ? [{ label: "Resultado (Projetado)", value: fmt(resultadoProjetado), style: resultadoProjetado >= 0 ? "text-green-500 font-bold" : "text-red-500 font-bold" }] : []),
             ].map((row, i) => row.label ? (
               <div key={i} className={`flex justify-between ${row.style}`}>
                 <span className="text-muted-foreground">{row.label}</span>
