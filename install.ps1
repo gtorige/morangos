@@ -62,7 +62,7 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     Write-Host ""
     Write-Host "Verificando atualizacoes..." -ForegroundColor DarkGray
     try {
-        $remotePkg = Invoke-WebRequest -Uri "https://raw.githubusercontent.com/gtorige/morangos/main/package.json" -UseBasicParsing -TimeoutSec 5 2>$null
+        $remotePkg = Invoke-WebRequest -Uri "https://raw.githubusercontent.com/gtorige/morangos/main/package.json?$(Get-Date -Format 'yyyyMMddHHmmss')" -UseBasicParsing -TimeoutSec 5 -Headers @{"Cache-Control"="no-cache"} 2>$null
         $remotePkgJson = $remotePkg.Content | ConvertFrom-Json
         $remoteVersion = $remotePkgJson.version
         if ($remoteVersion -and $remoteVersion -ne $localVersion) {
