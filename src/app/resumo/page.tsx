@@ -113,18 +113,27 @@ export default function ResumoPage() {
   const [customFim, setCustomFim] = useState(todayStr());
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("geral");
   const [viewMode, setViewMode] = useState<ViewMode>("projetado");
 
   const fetchResumo = useCallback(async () => {
     try {
       setLoading(true);
+      setErro(null);
       let url = `/api/resumo?data=${data}&periodo=${periodo}`;
       if (periodo === "custom") url = `/api/resumo?periodo=custom&dataInicio=${customInicio}&dataFim=${customFim}`;
       const res = await fetch(url);
-      if (!res.ok) return;
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setErro(`Erro ${res.status}: ${body?.error ?? res.statusText}`);
+        return;
+      }
       setResumo(await res.json());
-    } catch (e) { console.error("Erro:", e) }
+    } catch (e) {
+      setErro(`Erro de conexão: ${e instanceof Error ? e.message : String(e)}`);
+      console.error("Erro:", e);
+    }
     finally { setLoading(false) }
   }, [data, periodo, customInicio, customFim]);
 
@@ -202,7 +211,7 @@ export default function ResumoPage() {
       {loading ? (
         <div className="flex items-center justify-center py-20"><div className="animate-pulse text-muted-foreground">Carregando...</div></div>
       ) : !resumo ? (
-        <Empty t="Erro ao carregar resumo." />
+        <Empty t={erro ?? "Erro ao carregar resumo."} />
       ) : tab === "geral" ? (
         <GeralTab resumo={resumo} periodo={periodo} periodoLabels={periodoLabels} isAno={isAno} viewMode={viewMode} />
       ) : (
