@@ -317,7 +317,7 @@ function PedidosPageInner() {
       await fetch(`/api/pedidos/${drawerPedido.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: value, ...(field === "situacaoPagamento" && value === "Pago" ? { valorPago: drawerPedido.total } : {}) }),
+        body: JSON.stringify({ [field]: value, ...(field === "situacaoPagamento" ? { valorPago: value === "Pago" ? drawerPedido.total : 0 } : {}) }),
       });
       // Refresh drawer and list
       const r = await fetch(`/api/pedidos/${drawerPedido.id}`);

@@ -404,6 +404,7 @@ export default function EditarPedidoPage() {
           : undefined,
         observacoes,
         situacaoPagamento,
+        valorPago: situacaoPagamento === "Pago" ? total : 0,
         statusEntrega,
         ordemRota: ordemRota ? Number(ordemRota) : null,
         taxaEntrega,
