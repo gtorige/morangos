@@ -97,8 +97,9 @@ export default function NovoPedidoPage() {
   async function fetchClientes() {
     try {
       const res = await fetch("/api/clientes");
+      if (!res.ok) return;
       const data = await res.json();
-      setClientes(data);
+      if (Array.isArray(data)) setClientes(data);
     } catch (error) {
       console.error("Erro ao buscar clientes:", error);
     }
@@ -107,8 +108,9 @@ export default function NovoPedidoPage() {
   async function fetchProdutos() {
     try {
       const res = await fetch("/api/produtos");
+      if (!res.ok) return;
       const data = await res.json();
-      setProdutos(data);
+      if (Array.isArray(data)) setProdutos(data);
     } catch (error) {
       console.error("Erro ao buscar produtos:", error);
     }
@@ -117,8 +119,9 @@ export default function NovoPedidoPage() {
   async function fetchFormasPagamento() {
     try {
       const res = await fetch("/api/formas-pagamento");
+      if (!res.ok) return;
       const data = await res.json();
-      setFormasPagamento(data);
+      if (Array.isArray(data)) setFormasPagamento(data);
     } catch (error) {
       console.error("Erro ao buscar formas de pagamento:", error);
     }
@@ -127,7 +130,9 @@ export default function NovoPedidoPage() {
   async function fetchPromocoes() {
     try {
       const res = await fetch("/api/promocoes");
+      if (!res.ok) return;
       const data = await res.json();
+      if (!Array.isArray(data)) return;
       const today = new Date().toISOString().split("T")[0];
       const ativas = data.filter(
         (p: Promocao) => p.ativo && p.dataInicio <= today && p.dataFim >= today

@@ -27,6 +27,10 @@ export default function proxy(request: NextRequest) {
     request.cookies.get("__Secure-next-auth.session-token");
 
   if (!sessionCookie) {
+    // API routes: return 401 JSON instead of redirect
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
