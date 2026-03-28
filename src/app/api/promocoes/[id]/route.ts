@@ -47,10 +47,10 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { nome, produtoId, tipo, precoPromocional, leveQuantidade, pagueQuantidade, dataInicio, dataFim, ativo } = body;
+    const { nome, produtoId, tipo, precoPromocional, leveQuantidade, pagueQuantidade, quantidadeMinima, produtoId2, dataInicio, dataFim, ativo } = body;
     const promocao = await prisma.promocao.update({
       where: { id: Number(id) },
-      data: { nome, produtoId, tipo, precoPromocional, leveQuantidade, pagueQuantidade, dataInicio, dataFim, ativo },
+      data: { nome, produtoId, tipo, precoPromocional, leveQuantidade, pagueQuantidade, quantidadeMinima: quantidadeMinima ?? null, produtoId2: produtoId2 ?? null, dataInicio, dataFim, ativo },
       include: { produto: true },
     });
 

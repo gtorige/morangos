@@ -37,6 +37,9 @@ interface Promocao {
   precoPromocional: number;
   leveQuantidade: number | null;
   pagueQuantidade: number | null;
+  quantidadeMinima: number | null;
+  produtoId2: number | null;
+  produto2Nome?: string;
   dataInicio: string;
   dataFim: string;
   ativo: boolean;
@@ -49,6 +52,8 @@ interface FormData {
   precoPromocional: string;
   leveQuantidade: string;
   pagueQuantidade: string;
+  quantidadeMinima: string;
+  produtoId2: string;
   dataInicio: string;
   dataFim: string;
   ativo: boolean;
@@ -61,6 +66,8 @@ const emptyForm: FormData = {
   precoPromocional: "",
   leveQuantidade: "",
   pagueQuantidade: "",
+  quantidadeMinima: "",
+  produtoId2: "",
   dataInicio: "",
   dataFim: "",
   ativo: true,
@@ -74,6 +81,25 @@ function formatDate(dateStr: string): string {
   if (!dateStr) return "";
   const [year, month, day] = dateStr.split("-");
   return `${day}/${month}/${year}`;
+}
+
+function tipoLabel(item: Promocao, produtos: Produto[]): string {
+  switch (item.tipo) {
+    case "desconto":
+      return `Desconto · ${formatPrice(item.precoPromocional)}`;
+    case "leve_x_pague_y":
+      return `Leve ${item.leveQuantidade} Pague ${item.pagueQuantidade}`;
+    case "quantidade_minima": {
+      const min = item.quantidadeMinima ?? 0;
+      return `Acima de ${min} un. · ${formatPrice(item.precoPromocional)}`;
+    }
+    case "compra_casada": {
+      const p2 = produtos.find((p) => p.id === item.produtoId2);
+      return `Casada com ${p2?.nome ?? "?"} · ${formatPrice(item.precoPromocional)}`;
+    }
+    default:
+      return item.tipo;
+  }
 }
 
 export default function PromocoesPage() {
@@ -125,6 +151,8 @@ export default function PromocoesPage() {
       precoPromocional: String(item.precoPromocional ?? ""),
       leveQuantidade: String(item.leveQuantidade ?? ""),
       pagueQuantidade: String(item.pagueQuantidade ?? ""),
+      quantidadeMinima: String(item.quantidadeMinima ?? ""),
+      produtoId2: String(item.produtoId2 ?? ""),
       dataInicio: item.dataInicio,
       dataFim: item.dataFim,
       ativo: item.ativo,
@@ -136,17 +164,27 @@ export default function PromocoesPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    const body = {
+    const body: Record<string, unknown> = {
       nome: form.nome,
       produtoId: Number(form.produtoId),
       tipo: form.tipo,
-      precoPromocional: form.tipo === "desconto" ? parseFloat(form.precoPromocional) : undefined,
-      leveQuantidade: form.tipo === "leve_x_pague_y" ? Number(form.leveQuantidade) : undefined,
-      pagueQuantidade: form.tipo === "leve_x_pague_y" ? Number(form.pagueQuantidade) : undefined,
       dataInicio: form.dataInicio,
       dataFim: form.dataFim,
       ativo: form.ativo,
     };
+
+    if (form.tipo === "desconto") {
+      body.precoPromocional = parseFloat(form.precoPromocional);
+    } else if (form.tipo === "leve_x_pague_y") {
+      body.leveQuantidade = Number(form.leveQuantidade);
+      body.pagueQuantidade = Number(form.pagueQuantidade);
+    } else if (form.tipo === "quantidade_minima") {
+      body.quantidadeMinima = Number(form.quantidadeMinima);
+      body.precoPromocional = parseFloat(form.precoPromocional);
+    } else if (form.tipo === "compra_casada") {
+      body.produtoId2 = Number(form.produtoId2);
+      body.precoPromocional = parseFloat(form.precoPromocional);
+    }
 
     try {
       if (editingId) {
@@ -201,7 +239,7 @@ export default function PromocoesPage() {
             <TableRow>
               <TableHead>Nome</TableHead>
               <TableHead className="hidden sm:table-cell">Produto</TableHead>
-              <TableHead className="hidden md:table-cell">Tipo</TableHead>
+              <TableHead className="hidden md:table-cell">Tipo / Condição</TableHead>
               <TableHead className="hidden md:table-cell">Início</TableHead>
               <TableHead className="hidden md:table-cell">Fim</TableHead>
               <TableHead>Ativo</TableHead>
@@ -226,12 +264,8 @@ export default function PromocoesPage() {
                 <TableRow key={item.id} className="cursor-pointer hover:bg-accent/50 transition-colors" onDoubleClick={() => openEdit(item)}>
                   <TableCell className="font-medium">{item.nome}</TableCell>
                   <TableCell className="hidden sm:table-cell">{item.produto?.nome}</TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    {(item.tipo || "desconto") === "desconto" ? (
-                      <span>Desconto &middot; {formatPrice(item.precoPromocional)}</span>
-                    ) : (
-                      <span>Leve {item.leveQuantidade} Pague {item.pagueQuantidade}</span>
-                    )}
+                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                    {tipoLabel(item, produtos)}
                   </TableCell>
                   <TableCell className="hidden md:table-cell">{formatDate(item.dataInicio)}</TableCell>
                   <TableCell className="hidden md:table-cell">{formatDate(item.dataFim)}</TableCell>
@@ -304,9 +338,12 @@ export default function PromocoesPage() {
               >
                 <option value="desconto">Desconto no Preço</option>
                 <option value="leve_x_pague_y">Leve X Pague Y</option>
+                <option value="quantidade_minima">Acima de X unidades → preço especial</option>
+                <option value="compra_casada">Compra Casada (leva 2 produtos)</option>
               </select>
             </div>
 
+            {/* Desconto */}
             {form.tipo === "desconto" && (
               <div className="space-y-2">
                 <Label htmlFor="precoPromocional">Preço Promocional</Label>
@@ -324,6 +361,7 @@ export default function PromocoesPage() {
               </div>
             )}
 
+            {/* Leve X Pague Y */}
             {form.tipo === "leve_x_pague_y" && (
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -350,6 +388,80 @@ export default function PromocoesPage() {
                     value={form.pagueQuantidade}
                     onChange={(e) =>
                       setForm({ ...form, pagueQuantidade: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Quantidade mínima */}
+            {form.tipo === "quantidade_minima" && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="quantidadeMinima">A partir de (un.)</Label>
+                  <Input
+                    id="quantidadeMinima"
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="ex: 10"
+                    value={form.quantidadeMinima}
+                    onChange={(e) =>
+                      setForm({ ...form, quantidadeMinima: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="precoPromocionalQty">Preço por unidade</Label>
+                  <Input
+                    id="precoPromocionalQty"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="ex: 4,50"
+                    value={form.precoPromocional}
+                    onChange={(e) =>
+                      setForm({ ...form, precoPromocional: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Compra casada */}
+            {form.tipo === "compra_casada" && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Produto parceiro (deve estar no mesmo pedido)</Label>
+                  <select
+                    value={form.produtoId2}
+                    onChange={(e) => setForm({ ...form, produtoId2: e.target.value })}
+                    required
+                    className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+                  >
+                    <option value="">Selecione o segundo produto</option>
+                    {produtos
+                      .filter((p) => String(p.id) !== form.produtoId)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.nome}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="precoPromocionalCasada">Preço promocional do produto principal</Label>
+                  <Input
+                    id="precoPromocionalCasada"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={form.precoPromocional}
+                    onChange={(e) =>
+                      setForm({ ...form, precoPromocional: e.target.value })
                     }
                     required
                   />

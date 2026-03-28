@@ -47,6 +47,8 @@ interface Promocao {
   precoPromocional: number;
   leveQuantidade: number | null;
   pagueQuantidade: number | null;
+  quantidadeMinima: number | null;
+  produtoId2: number | null;
   dataInicio: string;
   dataFim: string;
   ativo: boolean;
@@ -281,7 +283,7 @@ export default function NovoPedidoPage() {
     const qty = parseFloat(item.quantidade || "0");
     const promo = !item.precoManual ? getPromocaoForProduto(item.produtoId) : undefined;
     const tipo = promo ? (promo.tipo || "desconto") : undefined;
-    const subtotal = calcSubtotalBase(qty, item.precoUnitario, tipo, promo?.leveQuantidade, promo?.pagueQuantidade);
+    const subtotal = calcSubtotalBase(qty, item.precoUnitario, tipo, promo?.leveQuantidade, promo?.pagueQuantidade, promo?.quantidadeMinima, promo?.precoPromocional);
     const plainSubtotal = item.precoUnitario * qty;
     const qtdCobrada = subtotal !== plainSubtotal ? Math.round((subtotal / item.precoUnitario) * 100) / 100 : null;
     return { subtotal, qtdCobrada };
@@ -618,6 +620,8 @@ export default function NovoPedidoPage() {
                   const { subtotal, qtdCobrada } = calcSubtotal(item);
                   const isDescontoPromo = promo && (promo.tipo || "desconto") === "desconto";
                   const isLevePromo = promo && promo.tipo === "leve_x_pague_y";
+                  const isQtdMinPromo = promo && promo.tipo === "quantidade_minima";
+                  const isCasadaPromo = promo && promo.tipo === "compra_casada";
 
                   return (
                     <div key={index} className="space-y-1">
@@ -767,6 +771,16 @@ export default function NovoPedidoPage() {
                         {isLevePromo && (
                           <Badge className="bg-blue-600 text-white text-xs">
                             Leve {promo.leveQuantidade} Pague {promo.pagueQuantidade}
+                          </Badge>
+                        )}
+                        {isQtdMinPromo && promo.quantidadeMinima && (
+                          <Badge className="bg-purple-600 text-white text-xs">
+                            A partir de {promo.quantidadeMinima} un.: {formatPrice(promo.precoPromocional)}
+                          </Badge>
+                        )}
+                        {isCasadaPromo && (
+                          <Badge className="bg-orange-600 text-white text-xs">
+                            Compra casada: {formatPrice(promo.precoPromocional)}
                           </Badge>
                         )}
                         {qtdCobrada !== null && (

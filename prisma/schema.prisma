@@ -45,6 +45,8 @@ model Promocao {
   precoPromocional  Float    @default(0) @map("preco_promocional")
   leveQuantidade    Int?     @map("leve_quantidade")
   pagueQuantidade   Int?     @map("pague_quantidade")
+  quantidadeMinima  Int?     @map("quantidade_minima")
+  produtoId2        Int?     @map("produto_id_2")
   dataInicio        String   @map("data_inicio")
   dataFim           String   @map("data_fim")
   ativo             Boolean  @default(true)

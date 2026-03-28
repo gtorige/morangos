@@ -219,6 +219,19 @@ export async function POST(request: NextRequest) {
           } else {
             subtotal = precoUnitario * item.quantidade;
           }
+        } else if (promocao && promocao.tipo === "quantidade_minima") {
+          // Quantity threshold promotion: special price above minimum quantity
+          const min = promocao.quantidadeMinima ?? 0;
+          if (min > 0 && item.quantidade >= min) {
+            precoUnitario = promocao.precoPromocional;
+          } else {
+            precoUnitario = precoBase;
+          }
+          subtotal = precoUnitario * item.quantidade;
+        } else if (promocao && promocao.tipo === "compra_casada") {
+          // Bundle promotion: handled after all items are processed (needs partner product check)
+          precoUnitario = precoBase;
+          subtotal = precoUnitario * item.quantidade;
         } else if (promocao && promocao.tipo === "desconto") {
           // Discount promotion: use promotional price
           precoUnitario = promocao.precoPromocional;
@@ -240,6 +253,21 @@ export async function POST(request: NextRequest) {
         };
       }
     );
+
+    // Second pass: apply "compra_casada" (bundle) promotions
+    // A bundle promotion on product A applies its precoPromocional when product B is also in the order
+    const produtoIdSet = new Set(produtoIds);
+    for (const promocao of allPromocoes) {
+      if (promocao.tipo !== "compra_casada" || !promocao.produtoId2) continue;
+      if (!produtoIdSet.has(promocao.produtoId2)) continue; // partner not in order
+      const targetItem = itensProcessados.find(
+        (i: { produtoId: number }) => i.produtoId === promocao.produtoId
+      );
+      if (!targetItem) continue;
+      // Only apply if item is using base price (not overridden)
+      targetItem.precoUnitario = promocao.precoPromocional;
+      targetItem.subtotal = promocao.precoPromocional * targetItem.quantidade;
+    }
 
     const total =
       itensProcessados.reduce(
