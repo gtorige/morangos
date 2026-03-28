@@ -159,8 +159,10 @@ export default function ProdutosPage() {
   }
 
   function exportCSV() {
-    const csv = ["Nome;Preço", ...produtos.map(p => `"${p.nome}";${p.preco.toFixed(2).replace(".", ",")}`).join('\n')];
-    const blob = new Blob(['\uFEFF' + csv.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const header = 'Nome;Preco';
+    const rows = produtos.map(p => '"' + p.nome.replace(/"/g, '""') + '";' + p.preco.toFixed(2).replace('.', ','));
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = 'produtos.csv'; a.click();
@@ -182,9 +184,9 @@ export default function ProdutosPage() {
           </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger render={<Button onClick={handleNew} />}>
-            <Plus className="size-4" />
-            Novo Produto
-          </DialogTrigger>
+              <Plus className="size-4" />
+              Novo Produto
+            </DialogTrigger>
 
           <DialogContent>
             <DialogHeader>
