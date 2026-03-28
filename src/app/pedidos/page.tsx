@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, Suspense } from "react";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +39,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { calcSubtotal as calcSubtotalBase } from "@/lib/pedido-utils";
+import { NovoPedidoSheet, NovoPedidoInitialData } from "@/components/novo-pedido-sheet";
 
 interface Produto {
   id: number;
@@ -171,7 +171,6 @@ function getSunday(monday: Date) {
 function dateToStr(d: Date) { return d.toISOString().slice(0, 10); }
 
 function PedidosPageInner() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [allPedidos, setAllPedidos] = useState<Pedido[]>([]); // unfiltered for dropdown options
@@ -243,6 +242,10 @@ function PedidosPageInner() {
   const [editProdutoDropdowns, setEditProdutoDropdowns] = useState<Record<number, boolean>>({});
   const [editProdutoHighlights, setEditProdutoHighlights] = useState<Record<number, number>>({});
   const editProdutoRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
+  // Novo Pedido sheet state
+  const [novoPedidoOpen, setNovoPedidoOpen] = useState(false);
+  const [novoPedidoInitialData, setNovoPedidoInitialData] = useState<NovoPedidoInitialData | undefined>(undefined);
 
   // Drawer client history state
   const [drawerHistoryOpen, setDrawerHistoryOpen] = useState(false);
@@ -644,16 +647,22 @@ function PedidosPageInner() {
     }
   }
 
-  async function handleDuplicar(pedidoId: number) {
-    try {
-      const res = await fetch(`/api/pedidos?duplicar=${pedidoId}`);
-      const novo = await res.json();
-      if (novo && novo.id) {
-        router.push(`/pedidos/${novo.id}`);
-      }
-    } catch (error) {
-      console.error("Erro ao duplicar pedido:", error);
-    }
+  function handleDuplicar(pedidoId: number) {
+    const pedido = pedidos.find((p) => p.id === pedidoId) ?? allPedidos.find((p) => p.id === pedidoId);
+    if (!pedido) return;
+    setNovoPedidoInitialData({
+      clienteId: pedido.clienteId,
+      clienteNome: pedido.cliente.nome,
+      formaPagamentoId: pedido.formaPagamentoId ?? undefined,
+      taxaEntrega: pedido.taxaEntrega,
+      observacoes: pedido.observacoes,
+      itens: pedido.itens.map((i) => ({
+        produtoId: i.produtoId,
+        quantidade: i.quantidade,
+        precoUnitario: i.precoUnitario,
+      })),
+    });
+    setNovoPedidoOpen(true);
   }
 
   async function handleDelete(id: number) {
@@ -860,12 +869,13 @@ function PedidosPageInner() {
           <ClipboardList className="size-5" />
           <h1 className="text-2xl font-semibold">Pedidos</h1>
         </div>
-        <Link href="/pedidos/novo">
-          <Button className="bg-green-600 hover:bg-green-700 text-white">
-            <Plus className="size-4" />
-            Novo Pedido
-          </Button>
-        </Link>
+        <Button
+          className="bg-green-600 hover:bg-green-700 text-white"
+          onClick={() => { setNovoPedidoInitialData(undefined); setNovoPedidoOpen(true); }}
+        >
+          <Plus className="size-4" />
+          Novo Pedido
+        </Button>
       </div>
 
       {/* Status Tabs */}
@@ -1940,6 +1950,13 @@ function PedidosPageInner() {
           </div>
         ) : null}
       </div>
+
+      <NovoPedidoSheet
+        open={novoPedidoOpen}
+        onOpenChange={setNovoPedidoOpen}
+        onSuccess={fetchPedidos}
+        initialData={novoPedidoInitialData}
+      />
     </div>
   );
 }
