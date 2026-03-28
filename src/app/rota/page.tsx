@@ -17,9 +17,6 @@ import {
   ArrowDown,
   Truck,
   Play,
-  Save,
-  RotateCcw,
-  Home,
   Route,
   Clock,
   Loader2,
@@ -28,6 +25,8 @@ import {
   Star,
   X,
   Settings,
+  Home,
+  Save,
 } from "lucide-react";
 
 interface Cliente {
@@ -73,6 +72,10 @@ interface Parada {
   endereco: string;
 }
 
+type ListItem =
+  | { type: "pedido"; data: Pedido }
+  | { type: "parada"; data: Parada };
+
 function fmt(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
@@ -82,7 +85,6 @@ function todayString() {
 }
 
 function buildAddress(cliente: Cliente) {
-  // Use endereço alternativo if available (e.g. "Shopping Ibirapuera, São Paulo")
   if (cliente.enderecoAlternativo?.trim()) {
     return cliente.enderecoAlternativo.trim();
   }
@@ -96,22 +98,27 @@ function buildDisplayAddress(cliente: Cliente) {
     return cliente.enderecoAlternativo.trim();
   }
   const street = [cliente.rua, cliente.numero].filter(Boolean).join(", ");
-  return [street, cliente.bairro].filter(Boolean).join(" - ");
+  return [street, cliente.bairro].filter(Boolean).join(" – ");
+}
+
+function buildListaOrdenada(pedidos: Pedido[], paradas: Parada[]): ListItem[] {
+  return [
+    ...pedidos.map((p) => ({ type: "pedido" as const, data: p })),
+    ...paradas.map((p) => ({ type: "parada" as const, data: p })),
+  ];
 }
 
 export default function RotaPage() {
   const [data, setData] = useState(todayString());
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
+  const [listaOrdenada, setListaOrdenada] = useState<ListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
   const [rotaInfo, setRotaInfo] = useState<RotaInfo | null>(null);
 
-  const [enderecoPartida, setEnderecoPartida] = useState("");
   const [enderecoSalvo, setEnderecoSalvo] = useState("");
-  const [savingEndereco, setSavingEndereco] = useState(false);
-  const [showEnderecoForm, setShowEnderecoForm] = useState(false);
 
   const [locaisFrequentes, setLocaisFrequentes] = useState<LocalFrequente[]>([]);
   const [paradas, setParadas] = useState<Parada[]>([]);
@@ -136,7 +143,6 @@ export default function RotaPage() {
       const res = await fetch("/api/configuracoes?chave=endereco_partida");
       const config = await res.json();
       if (config?.valor) {
-        setEnderecoPartida(config.valor);
         setEnderecoSalvo(config.valor);
       }
     } catch (error) {
@@ -160,15 +166,20 @@ export default function RotaPage() {
     if (!selectedLocalId) return;
     const local = locaisFrequentes.find((l) => String(l.id) === selectedLocalId);
     if (!local) return;
-    // Avoid duplicates
     if (paradas.some((p) => p.id === local.id)) return;
-    setParadas([...paradas, { id: local.id, nome: local.nome, endereco: local.endereco }]);
+    const novaParada: Parada = { id: local.id, nome: local.nome, endereco: local.endereco };
+    const novasParadas = [...paradas, novaParada];
+    setParadas(novasParadas);
+    // Append to end of list
+    setListaOrdenada((prev) => [...prev, { type: "parada", data: novaParada }]);
     setSelectedLocalId("");
     setRotaInfo(null);
   }
 
   function removerParada(id: number) {
-    setParadas(paradas.filter((p) => p.id !== id));
+    const novasParadas = paradas.filter((p) => p.id !== id);
+    setParadas(novasParadas);
+    setListaOrdenada((prev) => prev.filter((item) => !(item.type === "parada" && item.data.id === id)));
     setRotaInfo(null);
   }
 
@@ -197,29 +208,11 @@ export default function RotaPage() {
     try {
       const res = await fetch(`/api/locais-frequentes/${id}`, { method: "DELETE" });
       if (res.ok) {
-        // Remove from paradas if it was added
-        setParadas(paradas.filter((p) => p.id !== id));
+        removerParada(id);
         await fetchLocaisFrequentes();
       }
     } catch (error) {
       console.error("Erro ao excluir local:", error);
-    }
-  }
-
-  async function salvarEnderecoPartida() {
-    try {
-      setSavingEndereco(true);
-      await fetch("/api/configuracoes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chave: "endereco_partida", valor: enderecoPartida }),
-      });
-      setEnderecoSalvo(enderecoPartida);
-      setShowEnderecoForm(false);
-    } catch (error) {
-      console.error("Erro ao salvar endereço:", error);
-    } finally {
-      setSavingEndereco(false);
     }
   }
 
@@ -229,6 +222,8 @@ export default function RotaPage() {
       const res = await fetch(`/api/rota?data=${data}`);
       const json = await res.json();
       setPedidos(json);
+      // Rebuild list preserving paradas at end (clear optimized order on date change)
+      setListaOrdenada(buildListaOrdenada(json, paradas));
     } catch (error) {
       console.error("Erro ao buscar rota:", error);
     } finally {
@@ -291,20 +286,45 @@ export default function RotaPage() {
         return;
       }
 
-      const data = await res.json();
-      const { optimizedOrder, totalDistanceKm, totalDurationMinutes, deliveryDistanceKm, deliveryDurationMinutes, returnDurationMinutes } = data;
+      const respData = await res.json();
+      const {
+        optimizedOrder,
+        totalDistanceKm,
+        totalDurationMinutes,
+        deliveryDistanceKm,
+        deliveryDurationMinutes,
+        returnDurationMinutes,
+      } = respData;
 
-      // Reorder pedidos based on optimized order
-      // optimizedOrder indices may include paradas (idx >= pedidos.length), filter those out
-      const reordered = optimizedOrder
-        .filter((idx: number) => idx < pedidos.length)
-        .map((idx: number) => pedidos[idx])
+      const numPedidos = pedidos.length;
+
+      // Build combined ordered list (pedidos + paradas interleaved by optimized order)
+      const novaLista: ListItem[] = (optimizedOrder as number[])
+        .map((idx) => {
+          if (idx < numPedidos) {
+            return { type: "pedido" as const, data: pedidos[idx] };
+          } else {
+            const paradaIdx = idx - numPedidos;
+            if (paradaIdx < paradas.length) {
+              return { type: "parada" as const, data: paradas[paradaIdx] };
+            }
+            return null;
+          }
+        })
+        .filter(Boolean) as ListItem[];
+
+      setListaOrdenada(novaLista);
+
+      // Update pedidos order too (for compatibility with actions)
+      const reorderedPedidos = (optimizedOrder as number[])
+        .filter((idx) => idx < numPedidos)
+        .map((idx) => pedidos[idx])
         .filter(Boolean);
-      setPedidos(reordered);
+      setPedidos(reorderedPedidos);
 
       // Fetch embed map URL from server
       const originEnc = encodeURIComponent(enderecoSalvo);
-      const wps = reordered
+      const wps = reorderedPedidos
         .map((p: Pedido) => encodeURIComponent(buildAddress(p.cliente)))
         .join("|");
       const mapRes = await fetch(`/api/rota/mapa?origin=${originEnc}&destination=${originEnc}&waypoints=${wps}`);
@@ -384,14 +404,14 @@ export default function RotaPage() {
       waypoints.push(encodeURIComponent(enderecoSalvo));
     }
 
-    pedidos.forEach((p) => {
-      waypoints.push(encodeURIComponent(buildAddress(p.cliente)));
-    });
-
-    // Include additional paradas
-    paradas.forEach((p) => {
-      if (p.endereco.trim()) {
-        waypoints.push(encodeURIComponent(p.endereco.trim()));
+    // Use listaOrdenada to preserve optimized order (including paradas)
+    listaOrdenada.forEach((item) => {
+      if (item.type === "pedido") {
+        waypoints.push(encodeURIComponent(buildAddress(item.data.cliente)));
+      } else {
+        if (item.data.endereco.trim()) {
+          waypoints.push(encodeURIComponent(item.data.endereco.trim()));
+        }
       }
     });
 
@@ -405,70 +425,28 @@ export default function RotaPage() {
 
   function moveUp(index: number) {
     if (index === 0) return;
-    const updated = [...pedidos];
+    const updated = [...listaOrdenada];
     [updated[index - 1], updated[index]] = [updated[index], updated[index - 1]];
-    setPedidos(updated);
+    setListaOrdenada(updated);
     setRotaInfo(null);
   }
 
   function moveDown(index: number) {
-    if (index === pedidos.length - 1) return;
-    const updated = [...pedidos];
+    if (index === listaOrdenada.length - 1) return;
+    const updated = [...listaOrdenada];
     [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
-    setPedidos(updated);
+    setListaOrdenada(updated);
     setRotaInfo(null);
   }
 
+  const numPedidos = pedidos.length;
+
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-5 max-w-3xl">
       <div className="flex items-center gap-2">
         <Truck className="size-5" />
         <h1 className="text-2xl font-semibold tracking-tight">Rota de Entrega</h1>
       </div>
-
-      {/* Endereço de Partida */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center justify-between text-sm font-medium">
-            <div className="flex items-center gap-2">
-              <Home className="size-4" />
-              Endereço de Partida
-            </div>
-            {enderecoSalvo && !showEnderecoForm && (
-              <Button variant="ghost" size="sm" onClick={() => setShowEnderecoForm(true)}>
-                Alterar
-              </Button>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!enderecoSalvo || showEnderecoForm ? (
-            <div className="space-y-3">
-              <Input
-                placeholder="Ex: 588C+R5 São Paulo ou Rua das Flores, 100, São Paulo"
-                value={enderecoPartida}
-                onChange={(e) => setEnderecoPartida(e.target.value)}
-              />
-              <div className="flex gap-2">
-                <Button size="sm" onClick={salvarEnderecoPartida} disabled={savingEndereco || !enderecoPartida.trim()}>
-                  <Save className="size-4" />
-                  {savingEndereco ? "Salvando..." : "Salvar"}
-                </Button>
-                {enderecoSalvo && (
-                  <Button size="sm" variant="ghost" onClick={() => { setEnderecoPartida(enderecoSalvo); setShowEnderecoForm(false); }}>
-                    Cancelar
-                  </Button>
-                )}
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground flex items-center gap-1">
-              <MapPin className="size-3 shrink-0" />
-              {enderecoSalvo}
-            </p>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Paradas Adicionais */}
       <Card>
@@ -513,11 +491,11 @@ export default function RotaPage() {
 
           {/* Added paradas */}
           {paradas.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {paradas.map((parada) => (
                 <div
                   key={parada.id}
-                  className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2"
+                  className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-1.5"
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium">{parada.nome}</p>
@@ -545,7 +523,6 @@ export default function RotaPage() {
                 Gerenciar Locais Frequentes
               </p>
 
-              {/* Add new local */}
               <div className="flex flex-col sm:flex-row gap-2">
                 <Input
                   placeholder="Nome do local"
@@ -570,11 +547,8 @@ export default function RotaPage() {
                 </Button>
               </div>
 
-              {/* List existing locais */}
               {locaisFrequentes.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  Nenhum local frequente cadastrado.
-                </p>
+                <p className="text-xs text-muted-foreground">Nenhum local frequente cadastrado.</p>
               ) : (
                 <div className="space-y-1">
                   {locaisFrequentes.map((local) => (
@@ -584,9 +558,7 @@ export default function RotaPage() {
                     >
                       <div className="min-w-0">
                         <span className="text-sm">{local.nome}</span>
-                        <span className="text-xs text-muted-foreground ml-2">
-                          {local.endereco}
-                        </span>
+                        <span className="text-xs text-muted-foreground ml-2">{local.endereco}</span>
                       </div>
                       <Button
                         variant="ghost"
@@ -609,6 +581,15 @@ export default function RotaPage() {
         <Label htmlFor="data" className="text-xs">Data</Label>
         <Input id="data" type="date" value={data} onChange={(e) => setData(e.target.value)} className="w-full sm:w-44 h-8 text-sm" />
       </div>
+
+      {/* Warning if no address configured */}
+      {!enderecoSalvo && (
+        <p className="text-sm text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
+          Configure o endereço de partida em{" "}
+          <Link href="/admin/configuracoes" className="underline font-medium">Configurações</Link>{" "}
+          para otimizar a rota.
+        </p>
+      )}
 
       {/* Actions */}
       {!loading && pedidos.length > 0 && (
@@ -674,93 +655,120 @@ export default function RotaPage() {
         </Card>
       )}
 
-      {!enderecoSalvo && (
-        <p className="text-sm text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
-          Configure o endereço de partida acima para otimizar a rota.
-        </p>
-      )}
-
       <Separator />
 
       {loading ? (
         <p className="text-center text-muted-foreground py-8">Carregando...</p>
-      ) : pedidos.length === 0 ? (
+      ) : numPedidos === 0 ? (
         <p className="text-center text-muted-foreground py-8">
           Nenhuma entrega pendente para esta data.
         </p>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           <p className="text-sm text-muted-foreground">
-            {pedidos.length} entrega{pedidos.length > 1 ? "s" : ""} pendente{pedidos.length > 1 ? "s" : ""}
+            {numPedidos} entrega{numPedidos > 1 ? "s" : ""} pendente{numPedidos > 1 ? "s" : ""}
+            {paradas.length > 0 && ` · ${paradas.length} parada${paradas.length > 1 ? "s" : ""}`}
           </p>
 
-          {pedidos.map((pedido, index) => (
-            <Card key={pedido.id}>
-              <CardContent className="py-3">
-                <div className="flex items-start gap-3">
-                  {/* Number */}
-                  <span className="flex items-center justify-center size-7 rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0 mt-0.5">
-                    {index + 1}
-                  </span>
+          {listaOrdenada.map((item, index) =>
+            item.type === "pedido" ? (
+              /* Pedido card */
+              <Card key={`pedido-${item.data.id}`}>
+                <CardContent className="py-2 px-3">
+                  <div className="flex items-center gap-2">
+                    {/* Position number */}
+                    <span className="flex items-center justify-center size-6 rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">
+                      {index + 1}
+                    </span>
 
-                  {/* Content */}
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-medium">{pedido.cliente.nome}</p>
-                        <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <MapPin className="size-3 shrink-0" />
-                          {buildDisplayAddress(pedido.cliente)}
-                        </p>
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm leading-tight truncate">{item.data.cliente.nome}</p>
+                          <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                            <MapPin className="size-3 shrink-0" />
+                            {buildDisplayAddress(item.data.cliente)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <Badge
+                            variant={item.data.statusEntrega === "Em rota" ? "default" : "outline"}
+                            className="text-xs hidden sm:flex"
+                          >
+                            {item.data.statusEntrega}
+                          </Badge>
+                          <Button variant="ghost" size="icon-sm" onClick={() => moveUp(index)} disabled={index === 0}>
+                            <ArrowUp className="size-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="icon-sm" onClick={() => moveDown(index)} disabled={index === listaOrdenada.length - 1}>
+                            <ArrowDown className="size-3.5" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Badge variant={pedido.statusEntrega === "Em rota" ? "default" : "outline"} className="text-xs">
-                          {pedido.statusEntrega}
-                        </Badge>
-                        <Button variant="ghost" size="icon-sm" onClick={() => moveUp(index)} disabled={index === 0}>
-                          <ArrowUp className="size-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon-sm" onClick={() => moveDown(index)} disabled={index === pedidos.length - 1}>
-                          <ArrowDown className="size-3.5" />
-                        </Button>
-                      </div>
-                    </div>
 
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4 text-sm">
-                        <span className="font-bold">{fmt(pedido.total)}</span>
-                        <Badge variant={pedido.situacaoPagamento === "Pago" ? "default" : "outline"} className="text-xs">
-                          {pedido.situacaoPagamento}
-                        </Badge>
-                      </div>
-                      <div className="flex gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => marcarEntregue(pedido)}
-                          disabled={actionLoading === pedido.id || pedido.statusEntrega === "Entregue"}
-                          className="h-7 text-xs"
-                        >
-                          <Check className="size-3" />
-                          Entregue
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => registrarPagamento(pedido)}
-                          disabled={actionLoading === pedido.id || pedido.situacaoPagamento === "Pago"}
-                          className="h-7 text-xs"
-                        >
-                          <CreditCard className="size-3" />
-                          Pagar
-                        </Button>
+                      <div className="flex items-center justify-between mt-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold">{fmt(item.data.total)}</span>
+                          <Badge
+                            variant={item.data.situacaoPagamento === "Pago" ? "default" : "outline"}
+                            className="text-xs"
+                          >
+                            {item.data.situacaoPagamento}
+                          </Badge>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => marcarEntregue(item.data)}
+                            disabled={actionLoading === item.data.id || item.data.statusEntrega === "Entregue"}
+                            className="h-6 text-xs px-2"
+                          >
+                            <Check className="size-3" />
+                            Entregue
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => registrarPagamento(item.data)}
+                            disabled={actionLoading === item.data.id || item.data.situacaoPagamento === "Pago"}
+                            className="h-6 text-xs px-2"
+                          >
+                            <CreditCard className="size-3" />
+                            Pagar
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>
+                </CardContent>
+              </Card>
+            ) : (
+              /* Parada card */
+              <div
+                key={`parada-${item.data.id}`}
+                className="flex items-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-3 py-1.5"
+              >
+                <span className="flex items-center justify-center size-6 rounded-full bg-muted text-muted-foreground text-xs font-semibold shrink-0">
+                  {index + 1}
+                </span>
+                <MapPin className="size-3.5 text-muted-foreground shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium leading-tight">{item.data.nome}</p>
+                  <p className="text-xs text-muted-foreground truncate">{item.data.endereco}</p>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <Button variant="ghost" size="icon-sm" onClick={() => moveUp(index)} disabled={index === 0}>
+                    <ArrowUp className="size-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon-sm" onClick={() => moveDown(index)} disabled={index === listaOrdenada.length - 1}>
+                    <ArrowDown className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
+            )
+          )}
         </div>
       )}
     </div>
