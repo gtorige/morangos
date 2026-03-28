@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Plus, Trash2, Save, ArrowLeft } from "lucide-react";
+import { calcSubtotal as calcSubtotalBase } from "@/lib/pedido-utils";
 
 interface Cliente {
   id: number;
@@ -228,46 +229,16 @@ export default function EditarPedidoPage() {
 
   function calcSubtotal(item: ItemPedido): { subtotal: number; qtdCobrada: number | null } {
     const qty = parseFloat(item.quantidade || "0");
-    const promo = getPromocaoForProduto(item.produtoId);
-
-    if (
-      promo &&
-      (promo.tipo || "desconto") === "leve_x_pague_y" &&
-      !item.precoManual &&
-      promo.leveQuantidade &&
-      promo.pagueQuantidade
-    ) {
-      const leve = promo.leveQuantidade;
-      const pague = promo.pagueQuantidade;
-      const gruposCompletos = Math.floor(qty / leve);
-      const resto = qty % leve;
-      const qtdCobrada = gruposCompletos * pague + resto;
-      return { subtotal: qtdCobrada * item.precoUnitario, qtdCobrada };
-    }
-
-    return { subtotal: item.precoUnitario * qty, qtdCobrada: null };
+    const promo = !item.precoManual ? getPromocaoForProduto(item.produtoId) : undefined;
+    const tipo = promo ? (promo.tipo || "desconto") : undefined;
+    const subtotal = calcSubtotalBase(qty, item.precoUnitario, tipo, promo?.leveQuantidade, promo?.pagueQuantidade);
+    const plainSubtotal = item.precoUnitario * qty;
+    const qtdCobrada = subtotal !== plainSubtotal ? Math.round((subtotal / item.precoUnitario) * 100) / 100 : null;
+    return { subtotal, qtdCobrada };
   }
 
   function calcSubtotalFor(item: ItemPedido): { subtotal: number; qtdCobrada: number | null } {
-    const qty = parseFloat(item.quantidade || "0");
-    const promo = getPromocaoForProduto(item.produtoId);
-
-    if (
-      promo &&
-      (promo.tipo || "desconto") === "leve_x_pague_y" &&
-      !item.precoManual &&
-      promo.leveQuantidade &&
-      promo.pagueQuantidade
-    ) {
-      const leve = promo.leveQuantidade;
-      const pague = promo.pagueQuantidade;
-      const gruposCompletos = Math.floor(qty / leve);
-      const resto = qty % leve;
-      const qtdCobrada = gruposCompletos * pague + resto;
-      return { subtotal: qtdCobrada * item.precoUnitario, qtdCobrada };
-    }
-
-    return { subtotal: item.precoUnitario * qty, qtdCobrada: null };
+    return calcSubtotal(item);
   }
 
   function handleAddItem() {

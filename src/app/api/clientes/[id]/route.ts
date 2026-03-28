@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "../../../../../auth";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     const cliente = await prisma.cliente.findUnique({
       where: { id: Number(id) },
@@ -33,11 +39,17 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
+    const { nome, telefone, rua, numero, bairro, cidade, observacoes } = body;
     const cliente = await prisma.cliente.update({
       where: { id: Number(id) },
-      data: body,
+      data: { nome, telefone, rua, numero, bairro, cidade, observacoes },
     });
 
     return NextResponse.json(cliente);
@@ -55,6 +67,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     await prisma.cliente.delete({ where: { id: Number(id) } });
     return NextResponse.json({ message: "Cliente excluído com sucesso" });

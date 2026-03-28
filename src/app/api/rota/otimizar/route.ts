@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "../../../../../auth";
 
 interface Waypoint {
   address: string;
@@ -19,6 +20,11 @@ interface RoutesAPIResponse {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const apiKey = process.env.GOOGLE_ROUTES_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
@@ -101,9 +107,12 @@ export async function POST(request: NextRequest) {
     const optimizedWaypoints = optimizedOrder.map((idx) => waypoints[idx]);
 
     // Parse total duration (e.g. "3600s" -> seconds)
-    const durationSeconds = route.duration
-      ? parseInt(route.duration.replace("s", ""))
-      : 0;
+    const parseDuration = (d: string | undefined) => {
+      if (!d) return 0;
+      const match = d.match(/(\d+)/);
+      return match ? parseInt(match[1]) : 0;
+    };
+    const durationSeconds = parseDuration(route.duration);
     const distanceKm = route.distanceMeters
       ? (route.distanceMeters / 1000).toFixed(1)
       : "0";
@@ -113,9 +122,7 @@ export async function POST(request: NextRequest) {
       distanceKm: leg.distanceMeters
         ? (leg.distanceMeters / 1000).toFixed(1)
         : "0",
-      durationMinutes: leg.duration
-        ? Math.round(parseInt(leg.duration.replace("s", "")) / 60)
-        : 0,
+      durationMinutes: Math.round(parseDuration(leg.duration) / 60),
     }));
 
     // Separate delivery time (all legs except last which is return)

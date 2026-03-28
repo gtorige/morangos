@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { auth } from "../../../../auth";
 
 export async function GET() {
   try {
+    const session = await auth();
+    if (!(session?.user as { isAdmin?: boolean })?.isAdmin) {
+      return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+    }
+
     const dbPath = join(process.cwd(), "prisma", "dev.db");
     const fileBuffer = readFileSync(dbPath);
 

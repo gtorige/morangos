@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "../../../../../auth";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     const conta = await prisma.conta.findUnique({
       where: { id: Number(id) },
@@ -33,11 +39,17 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
+    const { fornecedorId, fornecedorNome, categoria, valor, vencimento, situacao } = body;
     const conta = await prisma.conta.update({
       where: { id: Number(id) },
-      data: body,
+      data: { fornecedorId, fornecedorNome, categoria, valor, vencimento, situacao },
     });
 
     return NextResponse.json(conta);
@@ -55,6 +67,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     await prisma.conta.delete({ where: { id: Number(id) } });
     return NextResponse.json({ message: "Conta excluída com sucesso" });

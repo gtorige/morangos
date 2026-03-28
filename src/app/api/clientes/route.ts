@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "../../../../auth";
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const busca = searchParams.get("busca");
 
@@ -33,11 +39,19 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    if (!body.nome || typeof body.nome !== "string" || !body.nome.trim()) {
-      return NextResponse.json({ error: "Nome é obrigatório" }, { status: 400 });
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
     }
-    const cliente = await prisma.cliente.create({ data: body });
+
+    const body = await request.json();
+    const { nome, telefone, rua, numero, bairro, cidade, observacoes } = body;
+    if (!nome?.trim()) {
+      return NextResponse.json({ error: "Nome é obrigatório." }, { status: 400 });
+    }
+    const cliente = await prisma.cliente.create({
+      data: { nome, telefone: telefone || "", rua: rua || "", numero: numero || "", bairro: bairro || "", cidade: cidade || "", observacoes: observacoes || "" },
+    });
     return NextResponse.json(cliente, { status: 201 });
   } catch (error) {
     console.error("Erro ao criar cliente:", error);

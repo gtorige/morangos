@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "../../../../../auth";
 
 export async function GET(request: NextRequest) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  }
+
   const apiKey = process.env.GOOGLE_ROUTES_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "API key not configured" }, { status: 500 });

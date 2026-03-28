@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "../../../../../auth";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     const produto = await prisma.produto.findUnique({
       where: { id: Number(id) },
@@ -33,15 +39,21 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     const idNum = parseInt(id);
     if (isNaN(idNum)) {
       return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     }
     const body = await request.json();
+    const { nome, preco } = body;
     const produto = await prisma.produto.update({
       where: { id: idNum },
-      data: body,
+      data: { nome, preco },
     });
 
     return NextResponse.json(produto);
@@ -59,6 +71,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     const produtoId = Number(id);
 
@@ -94,10 +111,11 @@ export async function DELETE(
       );
     }
 
-    // Delete related promotions first
-    await prisma.promocao.deleteMany({ where: { produtoId } });
-
-    await prisma.produto.delete({ where: { id: produtoId } });
+    // Delete related promotions and product in a transaction
+    await prisma.$transaction(async (tx) => {
+      await tx.promocao.deleteMany({ where: { produtoId } });
+      await tx.produto.delete({ where: { id: produtoId } });
+    });
     return NextResponse.json({ message: "Produto excluído com sucesso" });
   } catch (error) {
     console.error("Erro ao excluir produto:", error);

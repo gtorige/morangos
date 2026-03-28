@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { auth } from "../../../../auth";
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const duplicarId = searchParams.get("duplicar");
 
@@ -76,15 +82,20 @@ export async function GET(request: NextRequest) {
     const formaPagamentoId = searchParams.get("formaPagamento");
     if (formaPagamentoId) where.formaPagamentoId = Number(formaPagamentoId);
 
+    const validPagamento = ["Pendente", "Pago"];
+    const validEntrega = ["Pendente", "Em rota", "Entregue", "Cancelado"];
+
     const situacaoPagamento = searchParams.get("situacaoPagamento");
-    if (situacaoPagamento) where.situacaoPagamento = situacaoPagamento;
+    if (situacaoPagamento && validPagamento.includes(situacaoPagamento)) {
+      where.situacaoPagamento = situacaoPagamento;
+    }
 
     const statusEntrega = searchParams.get("statusEntrega");
     if (statusEntrega) {
-      const statuses = statusEntrega.split(",");
+      const statuses = statusEntrega.split(",").filter(s => validEntrega.includes(s));
       if (statuses.length === 1) {
         where.statusEntrega = statuses[0];
-      } else {
+      } else if (statuses.length > 1) {
         where.statusEntrega = { in: statuses };
       }
     }
@@ -130,6 +141,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const body = await request.json();
     if (!body.clienteId) {
       return NextResponse.json({ error: "Cliente é obrigatório" }, { status: 400 });

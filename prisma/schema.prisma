@@ -48,6 +48,7 @@ model Promocao {
   ativo             Boolean  @default(true)
 
   @@index([produtoId])
+  @@index([ativo, dataInicio, dataFim])
   @@map("promocoes")
 }
 
@@ -81,6 +82,7 @@ model Pedido {
 
   @@index([clienteId])
   @@index([dataEntrega])
+  @@index([clienteId, dataEntrega])
   @@map("pedidos")
 }
 
@@ -148,6 +150,7 @@ model PedidoRecorrente {
   pedidosGerados   Pedido[]
 
   @@index([clienteId])
+  @@index([ativo])
   @@map("pedidos_recorrentes")
 }
 

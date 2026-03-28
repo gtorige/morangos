@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "../../../../../auth";
 
 interface ItemInput {
   produtoId: number;
@@ -12,56 +13,69 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     const idNum = parseInt(id);
+    if (isNaN(idNum)) {
+      return NextResponse.json({ error: "ID inválido." }, { status: 400 });
+    }
     const body = await request.json();
     const { itens, ...data } = body;
 
-    // Update main record
-    await prisma.pedidoRecorrente.update({
-      where: { id: idNum },
-      data: {
-        clienteId: data.clienteId,
-        formaPagamentoId: data.formaPagamentoId || null,
-        diasSemana: data.diasSemana,
-        dataInicio: data.dataInicio,
-        dataFim: data.dataFim || null,
-        taxaEntrega: data.taxaEntrega ?? 0,
-        observacoes: data.observacoes ?? "",
-        ativo: data.ativo ?? true,
-      },
-    });
-
-    // Replace items if provided
-    if (itens) {
-      await prisma.pedidoRecorrenteItem.deleteMany({
-        where: { pedidoRecorrenteId: idNum },
+    // Wrap update + delete items + create items + delete old orders in a transaction
+    const { pendingOrderCount } = await prisma.$transaction(async (tx) => {
+      // Update main record
+      await tx.pedidoRecorrente.update({
+        where: { id: idNum },
+        data: {
+          clienteId: data.clienteId,
+          formaPagamentoId: data.formaPagamentoId || null,
+          diasSemana: data.diasSemana,
+          dataInicio: data.dataInicio,
+          dataFim: data.dataFim || null,
+          taxaEntrega: data.taxaEntrega ?? 0,
+          observacoes: data.observacoes ?? "",
+          ativo: data.ativo ?? true,
+        },
       });
-      await prisma.pedidoRecorrenteItem.createMany({
-        data: (itens as ItemInput[]).map((i) => ({
-          pedidoRecorrenteId: idNum,
-          produtoId: i.produtoId,
-          quantidade: i.quantidade,
-          precoManual: i.precoManual ?? null,
-        })),
+
+      // Replace items if provided
+      if (itens) {
+        await tx.pedidoRecorrenteItem.deleteMany({
+          where: { pedidoRecorrenteId: idNum },
+        });
+        await tx.pedidoRecorrenteItem.createMany({
+          data: (itens as ItemInput[]).map((i) => ({
+            pedidoRecorrenteId: idNum,
+            produtoId: i.produtoId,
+            quantidade: i.quantidade,
+            precoManual: i.precoManual ?? null,
+          })),
+        });
+      }
+
+      // ── Regenerate pending orders ──
+      // 1. Delete all undelivered orders from this recurrence
+      const pendingOrders = await tx.pedido.findMany({
+        where: {
+          recorrenteId: idNum,
+          statusEntrega: { notIn: ["Entregue", "Cancelado"] },
+        },
+        select: { id: true },
       });
-    }
 
-    // ── Regenerate pending orders ──
-    // 1. Delete all undelivered orders from this recurrence
-    const pendingOrders = await prisma.pedido.findMany({
-      where: {
-        recorrenteId: idNum,
-        statusEntrega: { notIn: ["Entregue", "Cancelado"] },
-      },
-      select: { id: true },
+      const orderIds = pendingOrders.map(po => po.id);
+      if (orderIds.length > 0) {
+        await tx.pedidoItem.deleteMany({ where: { pedidoId: { in: orderIds } } });
+        await tx.pedido.deleteMany({ where: { id: { in: orderIds } } });
+      }
+
+      return { pendingOrderCount: pendingOrders.length };
     });
-
-    const orderIds = pendingOrders.map(po => po.id);
-    if (orderIds.length > 0) {
-      await prisma.pedidoItem.deleteMany({ where: { pedidoId: { in: orderIds } } });
-      await prisma.pedido.deleteMany({ where: { id: { in: orderIds } } });
-    }
 
     // 2. Get updated recurrence with items
     const recorrente = await prisma.pedidoRecorrente.findUnique({
@@ -133,7 +147,7 @@ export async function PUT(
       include: { cliente: true, itens: { include: { produto: true } }, _count: { select: { pedidosGerados: true } } },
     });
 
-    return NextResponse.json({ ...updated, pedidosRegenerados: pedidosCriados, pedidosDeletados: pendingOrders.length });
+    return NextResponse.json({ ...updated, pedidosRegenerados: pedidosCriados, pedidosDeletados: pendingOrderCount });
   } catch (error) {
     console.error("Erro ao atualizar recorrente:", error);
     return NextResponse.json({ error: "Erro ao atualizar recorrente" }, { status: 500 });
@@ -145,32 +159,45 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
-    const idNum = parseInt(id);
-
-    const pendingOrders = await prisma.pedido.findMany({
-      where: {
-        recorrenteId: idNum,
-        statusEntrega: { notIn: ["Entregue", "Cancelado"] },
-      },
-      select: { id: true },
-    });
-
-    // Delete pending orders (items cascade)
-    const orderIds = pendingOrders.map(po => po.id);
-    if (orderIds.length > 0) {
-      await prisma.pedidoItem.deleteMany({ where: { pedidoId: { in: orderIds } } });
-      await prisma.pedido.deleteMany({ where: { id: { in: orderIds } } });
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
     }
 
-    // Unlink delivered/cancelled orders
-    await prisma.pedido.updateMany({
-      where: { recorrenteId: idNum },
-      data: { recorrenteId: null },
+    const { id } = await params;
+    const idNum = parseInt(id);
+    if (isNaN(idNum)) {
+      return NextResponse.json({ error: "ID inválido." }, { status: 400 });
+    }
+
+    const pendingOrderCount = await prisma.$transaction(async (tx) => {
+      const pendingOrders = await tx.pedido.findMany({
+        where: {
+          recorrenteId: idNum,
+          statusEntrega: { notIn: ["Entregue", "Cancelado"] },
+        },
+        select: { id: true },
+      });
+
+      // Delete pending orders (items cascade)
+      const orderIds = pendingOrders.map(po => po.id);
+      if (orderIds.length > 0) {
+        await tx.pedidoItem.deleteMany({ where: { pedidoId: { in: orderIds } } });
+        await tx.pedido.deleteMany({ where: { id: { in: orderIds } } });
+      }
+
+      // Unlink delivered/cancelled orders
+      await tx.pedido.updateMany({
+        where: { recorrenteId: idNum },
+        data: { recorrenteId: null },
+      });
+
+      await tx.pedidoRecorrente.delete({ where: { id: idNum } });
+
+      return pendingOrders.length;
     });
 
-    await prisma.pedidoRecorrente.delete({ where: { id: idNum } });
-    return NextResponse.json({ success: true, pedidosDeletados: pendingOrders.length });
+    return NextResponse.json({ success: true, pedidosDeletados: pendingOrderCount });
   } catch (error) {
     console.error("Erro ao excluir recorrente:", error);
     return NextResponse.json({ error: "Erro ao excluir recorrente" }, { status: 500 });

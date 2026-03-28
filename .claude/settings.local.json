@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch",
+      "Bash(curl -s -w \"\\\\n%{http_code}\" http://localhost:3000/api/setup)",
+      "Bash(curl -s -v http://localhost:3000/api/setup)",
+      "Read(//c/Users/Gabriel Torige/Desktop/morangos/prisma/**)",
+      "Read(//c/Users/Gabriel Torige/Desktop/morangos/**)",
+      "Bash(export PATH=\"/c/Program Files/nodejs:$PATH\")",
+      "Bash(node -e \"const {PrismaClient} = require\\(''@prisma/client''\\); const p = new PrismaClient\\(\\); p.usuario.findMany\\(\\).then\\(u => { console.log\\(JSON.stringify\\(u\\)\\); process.exit\\(0\\); }\\).catch\\(e => { console.error\\(e.message\\); process.exit\\(1\\); }\\)\")",
+      "Bash(npx prisma:*)",
+      "Bash(npx --package=prisma@5.22.0 prisma migrate dev --name add_username_auth_fields --create-only)",
+      "Bash(./node_modules/.bin/prisma migrate:*)",
+      "Bash(node_modules/.bin/prisma.cmd migrate:*)",
+      "Bash(ls \"C:\\\\Users\\\\Gabriel Torige\\\\morangos\\\\node_modules\\\\.bin\\\\prisma\"*)",
+      "Bash(npm install:*)",
+      "Bash(grep -n '\\\\$\\\\|`\\\\|>\\\\|<\\\\|\"\"\"\"\\\\|Write-Host' \"C:\\\\Users\\\\Gabriel Torige\\\\morangos\\\\install.ps1\")",
+      "Bash(grep -n \"Write-Host.*\\\\`$\\\\|Write-Host.*\\\\\\(\\\\|>.*\\\\|\\\\|\" \"C:\\\\Users\\\\Gabriel Torige\\\\morangos\\\\install.ps1\")",
+      "Bash(grep -E '\\\\$\\\\{|\\\\$\\\\\\(|Write-Host.*\\\\$' \"C:\\\\Users\\\\Gabriel Torige\\\\morangos\\\\install.ps1\")"
+    ]
+  }
+}

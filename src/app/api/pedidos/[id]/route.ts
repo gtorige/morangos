@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "../../../../../auth";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     const pedido = await prisma.pedido.findUnique({
       where: { id: Number(id) },
@@ -38,15 +44,17 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
     const { itens, ...pedidoData } = body;
 
     if (itens) {
-      // Delete existing items and recreate
-      await prisma.pedidoItem.deleteMany({
-        where: { pedidoId: Number(id) },
-      });
+      const idNum = Number(id);
 
       const total = itens.reduce(
         (acc: number, item: { subtotal?: number; precoUnitario: number; quantidade: number }) =>
@@ -54,32 +62,39 @@ export async function PUT(
         0
       );
 
-      const pedido = await prisma.pedido.update({
-        where: { id: Number(id) },
-        data: {
-          ...pedidoData,
-          total,
-          itens: {
-            create: itens.map(
-              (item: {
-                produtoId: number;
-                quantidade: number;
-                precoUnitario: number;
-                subtotal?: number;
-              }) => ({
-                produtoId: item.produtoId,
-                quantidade: item.quantidade,
-                precoUnitario: item.precoUnitario,
-                subtotal: item.subtotal ?? item.precoUnitario * item.quantidade,
-              })
-            ),
+      const pedido = await prisma.$transaction(async (tx) => {
+        // Delete existing items and recreate
+        await tx.pedidoItem.deleteMany({
+          where: { pedidoId: idNum },
+        });
+
+        return tx.pedido.update({
+          where: { id: idNum },
+          data: {
+            ...pedidoData,
+            total,
+            itens: {
+              create: itens.map(
+                (item: {
+                  produtoId: number;
+                  quantidade: number;
+                  precoUnitario: number;
+                  subtotal?: number;
+                }) => ({
+                  produtoId: item.produtoId,
+                  quantidade: item.quantidade,
+                  precoUnitario: item.precoUnitario,
+                  subtotal: item.subtotal ?? item.precoUnitario * item.quantidade,
+                })
+              ),
+            },
           },
-        },
-        include: {
-          cliente: true,
-          formaPagamento: true,
-          itens: { include: { produto: true } },
-        },
+          include: {
+            cliente: true,
+            formaPagamento: true,
+            itens: { include: { produto: true } },
+          },
+        });
       });
 
       return NextResponse.json(pedido);
@@ -110,6 +125,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
 
     // Delete items first (cascade)

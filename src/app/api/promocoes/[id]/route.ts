@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "../../../../../auth";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     const promocao = await prisma.promocao.findUnique({
       where: { id: Number(id) },
@@ -34,11 +40,17 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     const body = await request.json();
+    const { nome, produtoId, tipo, precoPromocional, leveQuantidade, pagueQuantidade, dataInicio, dataFim, ativo } = body;
     const promocao = await prisma.promocao.update({
       where: { id: Number(id) },
-      data: body,
+      data: { nome, produtoId, tipo, precoPromocional, leveQuantidade, pagueQuantidade, dataInicio, dataFim, ativo },
       include: { produto: true },
     });
 
@@ -57,6 +69,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+
     const { id } = await params;
     await prisma.promocao.delete({ where: { id: Number(id) } });
     return NextResponse.json({ message: "Promoção excluída com sucesso" });
