@@ -3,6 +3,22 @@
 # Sistema de Gerenciamento de Pedidos e Entregas
 # ============================================================
 
+# Verificar se esta rodando como Administrador
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host ""
+    Write-Host "ERRO: Execute o PowerShell como Administrador!" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Como fazer:" -ForegroundColor Yellow
+    Write-Host "  1. Feche esta janela" -ForegroundColor DarkGray
+    Write-Host "  2. Clique no menu Iniciar" -ForegroundColor DarkGray
+    Write-Host "  3. Digite PowerShell" -ForegroundColor DarkGray
+    Write-Host '  4. Clique com botao direito e "Executar como administrador"' -ForegroundColor DarkGray
+    Write-Host ""
+    Read-Host "Pressione Enter para fechar"
+    exit 1
+}
+
 # Permitir execucao de scripts nesta sessao (necessario para npm/npx)
 try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force } catch {}
 
@@ -262,16 +278,23 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
         }
     } catch {
         Write-Host "Instalando Node.js, aguarde..." -ForegroundColor Yellow
+        Write-Host "Baixando instalador..." -ForegroundColor DarkGray
         $nodeInstaller = Join-Path $env:TEMP "node-lts.msi"
         try {
+            # Usar URL direta do Node.js LTS
             Invoke-WebRequest -Uri "https://nodejs.org/dist/v22.15.0/node-v22.15.0-x64.msi" -OutFile $nodeInstaller -UseBasicParsing
         } catch {
             Show-Error "Falha ao baixar Node.js. Verifique sua conexao com a internet."
         }
+        Write-Host "Executando instalador (pode demorar 1-2 minutos)..." -ForegroundColor DarkGray
         try {
-            Start-Process msiexec.exe -ArgumentList "/i `"$nodeInstaller`" /quiet /norestart" -Wait -NoNewWindow
+            $msiProcess = Start-Process msiexec.exe -ArgumentList "/i `"$nodeInstaller`" /quiet /norestart" -Wait -NoNewWindow -PassThru
+            if ($msiProcess.ExitCode -ne 0) {
+                Write-Host "Codigo de saida do instalador: $($msiProcess.ExitCode)" -ForegroundColor Red
+                throw "msi failed"
+            }
         } catch {
-            Show-Error "Falha ao instalar Node.js."
+            Show-Error "Falha ao instalar Node.js. Certifique-se de estar rodando como Administrador."
         }
         Refresh-Path
         Start-Sleep -Seconds 2
