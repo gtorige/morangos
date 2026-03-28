@@ -9,7 +9,6 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 export default function LoginPage() {
   const [signing, setSigning] = useState(false);
   const [error, setError] = useState("");
-  const [needsSetup, setNeedsSetup] = useState(false);
   const [username, setUsername] = useState("");
   const [senha, setSenha] = useState("");
 
@@ -24,19 +23,6 @@ export default function LoginPage() {
     }
 
     setSigning(true);
-
-    // Check if admin exists before trying to sign in
-    try {
-      const setupRes = await fetch("/api/setup");
-      const setupData = await setupRes.json();
-      if (!setupData.hasAdmin) {
-        setNeedsSetup(true);
-        setSigning(false);
-        return;
-      }
-    } catch {
-      // Continue with sign in attempt
-    }
 
     try {
       const res = await fetch("/api/login", {
@@ -92,14 +78,6 @@ export default function LoginPage() {
             </div>
             {error && (
               <p className="text-sm text-red-500 font-medium">{error}</p>
-            )}
-            {needsSetup && (
-              <div className="rounded-lg border border-yellow-600/50 bg-yellow-950/20 p-3 text-sm">
-                <p className="text-yellow-500 font-medium">Nenhum administrador cadastrado.</p>
-                <a href="/setup" className="text-primary underline mt-1 inline-block">
-                  Configurar agora
-                </a>
-              </div>
             )}
             <Button type="submit" className="w-full" disabled={signing}>
               {signing ? "Entrando..." : "Entrar"}
