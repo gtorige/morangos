@@ -37,6 +37,9 @@ import {
   Loader2,
   Save,
   ChevronRight,
+  SlidersHorizontal,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 import { calcSubtotal as calcSubtotalBase } from "@/lib/pedido-utils";
 import { NovoPedidoSheet, NovoPedidoInitialData } from "@/components/novo-pedido-sheet";
@@ -106,6 +109,7 @@ function todayStr() { return new Date().toISOString().slice(0, 10) }
 interface Filters {
   clientes: string[];
   bairros: string[];
+  formasPagamento: number[];
   situacaoPagamento: string;
   statusEntrega: string[];
   dataInicio: string;
@@ -119,6 +123,7 @@ interface Filters {
 const defaultFilters: Filters = {
   clientes: [],
   bairros: [],
+  formasPagamento: [],
   situacaoPagamento: "",
   statusEntrega: ["Pendente", "Em rota", "Entregue"],
   dataInicio: todayStr(),
@@ -131,6 +136,7 @@ const defaultFilters: Filters = {
 const emptyFilters: Filters = {
   clientes: [],
   bairros: [],
+  formasPagamento: [],
   situacaoPagamento: "",
   statusEntrega: [],
   dataInicio: "",
@@ -139,6 +145,18 @@ const emptyFilters: Filters = {
   valorMax: "",
   recorrente: "",
 };
+
+type ColKey = 'id' | 'cliente' | 'bairro' | 'total' | 'pgto' | 'formaPgto' | 'entrega' | 'data';
+const COLUNAS_DEFAULT: { key: ColKey; label: string }[] = [
+  { key: 'id', label: '#' },
+  { key: 'cliente', label: 'Cliente' },
+  { key: 'bairro', label: 'Bairro' },
+  { key: 'total', label: 'Total' },
+  { key: 'pgto', label: 'Pgto' },
+  { key: 'formaPgto', label: 'F. Pgto' },
+  { key: 'entrega', label: 'Entrega' },
+  { key: 'data', label: 'Data' },
+];
 
 function formatPrice(value: number): string {
   return `R$ ${value.toFixed(2).replace(".", ",")}`;
@@ -151,7 +169,7 @@ function formatDate(dateStr: string): string {
 }
 
 type StatusTab = "todos" | "concluidos" | "pendente_pgto" | "pendente_tudo";
-type SortField = "id" | "cliente" | "bairro" | "total" | "pgto" | "entrega" | "data";
+type SortField = "id" | "cliente" | "bairro" | "total" | "pgto" | "formaPgto" | "entrega" | "data";
 type SortDir = "asc" | "desc";
 
 // Helper: get Monday of the week containing `date`
@@ -247,9 +265,26 @@ function PedidosPageInner() {
   const [novoPedidoOpen, setNovoPedidoOpen] = useState(false);
   const [novoPedidoInitialData, setNovoPedidoInitialData] = useState<NovoPedidoInitialData | undefined>(undefined);
 
+  const [colunasConfig, setColunasConfig] = useState<{ key: ColKey; visible: boolean }[]>(() => {
+    if (typeof window === 'undefined') return COLUNAS_DEFAULT.map(c => ({ key: c.key, visible: true }));
+    try {
+      const saved = localStorage.getItem('pedidos-colunas');
+      if (saved) {
+        const parsed: { key: ColKey; visible: boolean }[] = JSON.parse(saved);
+        const savedKeys = new Set(parsed.map(c => c.key));
+        const missing = COLUNAS_DEFAULT.filter(c => !savedKeys.has(c.key)).map(c => ({ key: c.key, visible: true }));
+        return [...parsed, ...missing];
+      }
+    } catch {}
+    return COLUNAS_DEFAULT.map(c => ({ key: c.key, visible: true }));
+  });
+  const [colunasOpen, setColunasOpen] = useState(false);
+
   // Drawer client history state
   const [drawerHistoryOpen, setDrawerHistoryOpen] = useState(false);
   const [drawerHistory, setDrawerHistory] = useState<Pedido[]>([]);
+
+  const colunasRef = useRef<HTMLDivElement>(null);
 
   // Save filters/tab/sort to localStorage
   useEffect(() => {
@@ -259,6 +294,16 @@ function PedidosPageInner() {
   useEffect(() => { localStorage.setItem("pedidos-tab", tab); }, [tab]);
   useEffect(() => { localStorage.setItem("pedidos-sort-field", sortField); }, [sortField]);
   useEffect(() => { localStorage.setItem("pedidos-sort-dir", sortDir); }, [sortDir]);
+  useEffect(() => { localStorage.setItem('pedidos-colunas', JSON.stringify(colunasConfig)); }, [colunasConfig]);
+
+  useEffect(() => {
+    if (!colunasOpen) return;
+    function onClickOutside(e: MouseEvent) {
+      if (colunasRef.current && !colunasRef.current.contains(e.target as Node)) setColunasOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [colunasOpen]);
 
   // Auto-fetch when filters change
   useEffect(() => {
@@ -795,7 +840,22 @@ function PedidosPageInner() {
     return sortDir === "asc" ? " ↑" : " ↓";
   }
 
+  function moveCol(key: ColKey, dir: -1 | 1) {
+    setColunasConfig(prev => {
+      const arr = [...prev];
+      const i = arr.findIndex(c => c.key === key);
+      const j = i + dir;
+      if (j < 0 || j >= arr.length) return prev;
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+      return arr;
+    });
+  }
+  function toggleCol(key: ColKey) {
+    setColunasConfig(prev => prev.map(c => c.key === key ? { ...c, visible: !c.visible } : c));
+  }
+
   const filteredByTab = pedidos.filter((p) => {
+    if (filters.formasPagamento.length > 0 && !filters.formasPagamento.includes(p.formaPagamentoId)) return false;
     switch (tab) {
       case "concluidos":
         return p.statusEntrega === "Entregue" && p.situacaoPagamento === "Pago";
@@ -814,6 +874,7 @@ function PedidosPageInner() {
       case "bairro": return (a.cliente?.bairro || "").localeCompare(b.cliente?.bairro || "") * dir;
       case "total": return (a.total - b.total) * dir;
       case "pgto": return a.situacaoPagamento.localeCompare(b.situacaoPagamento) * dir;
+      case "formaPgto": return (a.formaPagamento?.nome || '').localeCompare(b.formaPagamento?.nome || '') * dir;
       case "entrega": return a.statusEntrega.localeCompare(b.statusEntrega) * dir;
       case "data":
       default: return a.dataEntrega.localeCompare(b.dataEntrega) * dir;
@@ -840,6 +901,12 @@ function PedidosPageInner() {
   const uniqueBairros = useMemo(() => {
     const bairros = allPedidos.map(p => p.cliente?.bairro).filter(Boolean) as string[];
     return [...new Set(bairros)].sort();
+  }, [allPedidos]);
+
+  const uniqueFormasPag = useMemo(() => {
+    const map = new Map<number, string>();
+    allPedidos.forEach(p => { if (p.formaPagamento) map.set(p.formaPagamento.id, p.formaPagamento.nome); });
+    return [...map.entries()].map(([id, nome]) => ({ id, nome })).sort((a, b) => a.nome.localeCompare(b.nome));
   }, [allPedidos]);
 
   const totals = useMemo(() => {
@@ -988,6 +1055,30 @@ function PedidosPageInner() {
                         className="accent-[var(--color-primary)]"
                       />
                       {bairro}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Forma de Pagamento</Label>
+                <div className="space-y-1 max-h-[120px] overflow-y-auto rounded-lg border border-input bg-transparent p-2">
+                  {uniqueFormasPag.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">Nenhuma</p>
+                  ) : uniqueFormasPag.map(fp => (
+                    <label key={fp.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-accent/50 rounded px-1 py-0.5">
+                      <input
+                        type="checkbox"
+                        checked={filters.formasPagamento.includes(fp.id)}
+                        onChange={(e) => {
+                          const next = e.target.checked
+                            ? [...filters.formasPagamento, fp.id]
+                            : filters.formasPagamento.filter(id => id !== fp.id);
+                          setFilters({ ...filters, formasPagamento: next });
+                        }}
+                        className="accent-[var(--color-primary)]"
+                      />
+                      {fp.nome}
                     </label>
                   ))}
                 </div>
@@ -1311,158 +1402,201 @@ function PedidosPageInner() {
         </div>
 
         {/* Desktop table view */}
-        <div className="hidden sm:block overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    ref={(el) => { if (el) el.indeterminate = someSelected; }}
-                    onChange={toggleSelectAll}
-                    className="size-4 cursor-pointer accent-[var(--color-primary)]"
-                  />
-                </TableHead>
-                <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("id")}>#{sortIndicator("id")}</TableHead>
-                <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cliente")}>Cliente{sortIndicator("cliente")}</TableHead>
-                <TableHead className="hidden lg:table-cell cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("bairro")}>Bairro{sortIndicator("bairro")}</TableHead>
-                <TableHead className="text-right cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("total")}>Total{sortIndicator("total")}</TableHead>
-                <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("pgto")}>Pgto{sortIndicator("pgto")}</TableHead>
-                <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("entrega")}>Entrega{sortIndicator("entrega")}</TableHead>
-                <TableHead className="hidden md:table-cell cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("data")}>Data{sortIndicator("data")}</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredByTab.map((pedido) => (
-                <TableRow
-                  key={pedido.id}
-                  className={`cursor-pointer hover:bg-accent/50 transition-colors ${selectedIds.has(pedido.id) ? "bg-primary/5" : ""}`}
-                  onDoubleClick={() => setDrawerPedidoId(pedido.id)}
-                >
-                  <TableCell onClick={(e) => e.stopPropagation()}>
+        <div className="hidden sm:block">
+          {/* Column settings */}
+          <div className="flex justify-end mb-1">
+            <div ref={colunasRef} className="relative">
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setColunasOpen(o => !o)}>
+                <SlidersHorizontal className="size-3.5" />
+                Colunas
+              </Button>
+              {colunasOpen && (
+                <div className="absolute right-0 top-8 z-20 bg-popover border border-border rounded-lg shadow-lg p-3 w-52">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Colunas visíveis</p>
+                  <div className="space-y-1">
+                    {colunasConfig.map((col, i) => {
+                      const label = COLUNAS_DEFAULT.find(c => c.key === col.key)?.label ?? col.key;
+                      return (
+                        <div key={col.key} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={col.visible}
+                            onChange={() => toggleCol(col.key)}
+                            className="accent-[var(--color-primary)] size-3.5 cursor-pointer"
+                          />
+                          <span className="text-sm flex-1">{label}</span>
+                          <button
+                            onClick={() => moveCol(col.key, -1)}
+                            disabled={i === 0}
+                            className="p-0.5 rounded hover:bg-accent disabled:opacity-30"
+                          ><ChevronUp className="size-3" /></button>
+                          <button
+                            onClick={() => moveCol(col.key, 1)}
+                            disabled={i === colunasConfig.length - 1}
+                            className="p-0.5 rounded hover:bg-accent disabled:opacity-30"
+                          ><ChevronDown className="size-3" /></button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="overflow-x-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">
                     <input
                       type="checkbox"
-                      checked={selectedIds.has(pedido.id)}
-                      onChange={() => toggleSelect(pedido.id)}
+                      checked={allSelected}
+                      ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                      onChange={toggleSelectAll}
                       className="size-4 cursor-pointer accent-[var(--color-primary)]"
                     />
-                  </TableCell>
-                  <TableCell className="font-medium">{pedido.id}</TableCell>
-                  <TableCell>
-                    <span className="flex items-center gap-1.5">
-                      {pedido.cliente?.nome}
-                      {pedido.recorrenteId && <Badge variant="outline" className="text-[10px] px-1 py-0">Rec</Badge>}
-                    </span>
-                  </TableCell>
-                  <TableCell className="hidden lg:table-cell">{pedido.cliente?.bairro}</TableCell>
-                  <TableCell className="text-right font-medium">{formatPrice(pedido.total)}</TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    {pedido.statusEntrega === "Entregue" ? (
-                      <span className="cursor-pointer active:scale-95 transition-transform" onClick={() => handleInlineTogglePgto(pedido)}>
-                        {getPagamentoBadge(pedido.situacaoPagamento, pedido.statusEntrega)}
-                      </span>
-                    ) : (
-                      getPagamentoBadge(pedido.situacaoPagamento, pedido.statusEntrega)
-                    )}
-                  </TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <span className="cursor-pointer active:scale-95 transition-transform" onClick={() => handleInlineToggleEntrega(pedido)}>
-                      {getEntregaBadge(pedido.statusEntrega)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell" onClick={(e) => e.stopPropagation()}>
-                    {editingDateId === pedido.id ? (
-                      <input
-                        type="date"
-                        autoFocus
-                        value={editingDateValue}
-                        onChange={(e) => setEditingDateValue(e.target.value)}
-                        onBlur={() => handleInlineSaveDate(pedido.id, editingDateValue)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") handleInlineSaveDate(pedido.id, editingDateValue);
-                          if (e.key === "Escape") setEditingDateId(null);
-                        }}
-                        className="h-7 w-32 bg-transparent border-b border-primary text-sm outline-none"
-                      />
-                    ) : (
-                      <span
-                        className="cursor-pointer hover:text-primary transition-colors"
-                        onClick={() => { setEditingDateId(pedido.id); setEditingDateValue(pedido.dataEntrega || ""); }}
+                  </TableHead>
+                  {colunasConfig.filter(c => c.visible).map(col => {
+                    const sortable: Partial<Record<ColKey, SortField>> = { id: 'id', cliente: 'cliente', bairro: 'bairro', total: 'total', pgto: 'pgto', formaPgto: 'formaPgto', entrega: 'entrega', data: 'data' };
+                    const sf = sortable[col.key];
+                    const label = COLUNAS_DEFAULT.find(c => c.key === col.key)?.label ?? col.key;
+                    return (
+                      <TableHead
+                        key={col.key}
+                        className={`${sf ? 'cursor-pointer select-none hover:text-foreground' : ''} ${col.key === 'total' ? 'text-right' : ''}`}
+                        onClick={sf ? () => toggleSort(sf) : undefined}
                       >
-                        {formatDate(pedido.dataEntrega)}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-1">
-                      {pedido.statusEntrega === "Entregue" && pedido.situacaoPagamento !== "Pago" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleMarkPago(pedido)}
-                          title="Marcar como Pago"
-                        >
-                          <CreditCard className="size-4" />
-                          Pago
-                        </Button>
-                      )}
-                      {pedido.statusEntrega !== "Entregue" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleMarkEntregue(pedido)}
-                          title="Marcar como Entregue"
-                        >
-                          <Check className="size-4" />
-                          Entregue
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => handleDuplicar(pedido.id)}
-                        title="Duplicar"
-                      >
-                        <Copy className="size-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon-sm" title="Editar" onClick={() => setDrawerPedidoId(pedido.id)}>
-                        <Pencil className="size-4" />
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="icon-sm"
-                        onClick={() => handleDelete(pedido.id)}
-                        title="Excluir"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
+                        {label}{sf ? sortIndicator(sf) : ''}
+                      </TableHead>
+                    );
+                  })}
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-            <tfoot className="sticky bottom-0 bg-card border-t border-border">
-              <tr>
-                <td colSpan={4} className="px-4 py-2 text-sm text-muted-foreground">
-                  Total de pedidos: <span className="font-bold text-foreground">{totals.count}</span>
-                </td>
-                <td className="px-4 py-2 text-right text-sm">
-                  <span className="font-bold">{formatPrice(totals.total)}</span>
-                </td>
-                <td className="px-4 py-2 text-sm">
-                  <span className="font-bold text-green-500">{formatPrice(totals.recebido)}</span>
-                  <span className="text-muted-foreground text-xs ml-1">recebido</span>
-                </td>
-                <td className="px-4 py-2 text-sm">
-                  <span className="font-bold text-red-500">{formatPrice(totals.pendente)}</span>
-                  <span className="text-muted-foreground text-xs ml-1">pendente</span>
-                </td>
-                <td colSpan={2}></td>
-              </tr>
-            </tfoot>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredByTab.map((pedido) => (
+                  <TableRow
+                    key={pedido.id}
+                    className={`cursor-pointer hover:bg-accent/50 transition-colors ${selectedIds.has(pedido.id) ? 'bg-primary/5' : ''}`}
+                    onDoubleClick={() => setDrawerPedidoId(pedido.id)}
+                  >
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(pedido.id)}
+                        onChange={() => toggleSelect(pedido.id)}
+                        className="size-4 cursor-pointer accent-[var(--color-primary)]"
+                      />
+                    </TableCell>
+                    {colunasConfig.filter(c => c.visible).map(col => {
+                      switch (col.key) {
+                        case 'id':
+                          return <TableCell key="id" className="font-medium">{pedido.id}</TableCell>;
+                        case 'cliente':
+                          return (
+                            <TableCell key="cliente">
+                              <span className="flex items-center gap-1.5">
+                                {pedido.cliente?.nome}
+                                {pedido.recorrenteId && <Badge variant="outline" className="text-[10px] px-1 py-0">Rec</Badge>}
+                              </span>
+                            </TableCell>
+                          );
+                        case 'bairro':
+                          return <TableCell key="bairro">{pedido.cliente?.bairro}</TableCell>;
+                        case 'total':
+                          return <TableCell key="total" className="text-right font-medium">{formatPrice(pedido.total)}</TableCell>;
+                        case 'pgto':
+                          return (
+                            <TableCell key="pgto" onClick={(e) => e.stopPropagation()}>
+                              {pedido.statusEntrega === 'Entregue' ? (
+                                <span className="cursor-pointer active:scale-95 transition-transform" onClick={() => handleInlineTogglePgto(pedido)}>
+                                  {getPagamentoBadge(pedido.situacaoPagamento, pedido.statusEntrega)}
+                                </span>
+                              ) : (
+                                getPagamentoBadge(pedido.situacaoPagamento, pedido.statusEntrega)
+                              )}
+                            </TableCell>
+                          );
+                        case 'formaPgto':
+                          return <TableCell key="formaPgto" className="text-sm text-muted-foreground">{pedido.formaPagamento?.nome ?? '—'}</TableCell>;
+                        case 'entrega':
+                          return (
+                            <TableCell key="entrega" onClick={(e) => e.stopPropagation()}>
+                              <span className="cursor-pointer active:scale-95 transition-transform" onClick={() => handleInlineToggleEntrega(pedido)}>
+                                {getEntregaBadge(pedido.statusEntrega)}
+                              </span>
+                            </TableCell>
+                          );
+                        case 'data':
+                          return (
+                            <TableCell key="data" onClick={(e) => e.stopPropagation()}>
+                              {editingDateId === pedido.id ? (
+                                <input
+                                  type="date"
+                                  autoFocus
+                                  value={editingDateValue}
+                                  onChange={(e) => setEditingDateValue(e.target.value)}
+                                  onBlur={() => handleInlineSaveDate(pedido.id, editingDateValue)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleInlineSaveDate(pedido.id, editingDateValue);
+                                    if (e.key === 'Escape') setEditingDateId(null);
+                                  }}
+                                  className="h-7 w-32 bg-transparent border-b border-primary text-sm outline-none"
+                                />
+                              ) : (
+                                <span
+                                  className="cursor-pointer hover:text-primary transition-colors"
+                                  onClick={() => { setEditingDateId(pedido.id); setEditingDateValue(pedido.dataEntrega || ''); }}
+                                >
+                                  {formatDate(pedido.dataEntrega)}
+                                </span>
+                              )}
+                            </TableCell>
+                          );
+                        default:
+                          return null;
+                      }
+                    })}
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-1">
+                        {pedido.statusEntrega === 'Entregue' && pedido.situacaoPagamento !== 'Pago' && (
+                          <Button variant="ghost" size="sm" onClick={() => handleMarkPago(pedido)} title="Marcar como Pago">
+                            <CreditCard className="size-4" />Pago
+                          </Button>
+                        )}
+                        {pedido.statusEntrega !== 'Entregue' && (
+                          <Button variant="ghost" size="sm" onClick={() => handleMarkEntregue(pedido)} title="Marcar como Entregue">
+                            <Check className="size-4" />Entregue
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="icon-sm" onClick={() => handleDuplicar(pedido.id)} title="Duplicar">
+                          <Copy className="size-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon-sm" title="Editar" onClick={() => setDrawerPedidoId(pedido.id)}>
+                          <Pencil className="size-4" />
+                        </Button>
+                        <Button variant="destructive" size="icon-sm" onClick={() => handleDelete(pedido.id)} title="Excluir">
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+              <tfoot className="sticky bottom-0 bg-card border-t border-border">
+                <tr>
+                  <td colSpan={colunasConfig.filter(c => c.visible).length + 2} className="px-4 py-2">
+                    <div className="flex flex-wrap gap-4 text-sm">
+                      <span className="text-muted-foreground">Total: <span className="font-bold text-foreground">{totals.count} pedido{totals.count !== 1 ? 's' : ''}</span></span>
+                      <span className="font-bold">{formatPrice(totals.total)}</span>
+                      <span><span className="font-bold text-green-500">{formatPrice(totals.recebido)}</span> <span className="text-muted-foreground text-xs">recebido</span></span>
+                      <span><span className="font-bold text-red-500">{formatPrice(totals.pendente)}</span> <span className="text-muted-foreground text-xs">pendente</span></span>
+                    </div>
+                  </td>
+                </tr>
+              </tfoot>
+            </Table>
+          </div>
         </div>
         </>
       )}
