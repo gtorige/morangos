@@ -39,6 +39,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   pages: {
     signIn: "/login",
   },
+  cookies: {
+    sessionToken: {
+      name: "authjs.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax" as const,
+        path: "/",
+        secure: false,
+      },
+    },
+  },
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
