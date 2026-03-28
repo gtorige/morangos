@@ -39,6 +39,10 @@ export default function ProdutosPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
+  // Inline cell editing state
+  const [editingCell, setEditingCell] = useState<{id: number, field: string} | null>(null);
+  const [editingValue, setEditingValue] = useState("");
+
   useEffect(() => {
     fetchProdutos();
   }, []);
@@ -100,6 +104,21 @@ export default function ProdutosPage() {
       fetchProdutos();
     } catch (error) {
       console.error("Erro ao salvar produto:", error);
+    }
+  }
+
+  async function saveInlineEdit(id: number, field: string, value: string) {
+    setEditingCell(null);
+    try {
+      const payload = field === "preco" ? { [field]: parseFloat(value) || 0 } : { [field]: value };
+      await fetch(`/api/produtos/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      fetchProdutos();
+    } catch (error) {
+      console.error("Erro ao salvar:", error);
     }
   }
 
@@ -216,10 +235,55 @@ export default function ProdutosPage() {
             </TableHeader>
             <TableBody>
               {produtos.map((produto) => (
-                <TableRow key={produto.id}>
-                  <TableCell className="font-medium">{produto.nome}</TableCell>
-                  <TableCell>{formatPreço(produto.preco)}</TableCell>
-                  <TableCell className="text-right">
+                <TableRow key={produto.id} className="cursor-pointer hover:bg-accent/50 transition-colors" onDoubleClick={() => handleEdit(produto)}>
+                  <TableCell className="font-medium" onClick={(e) => e.stopPropagation()}>
+                    {editingCell?.id === produto.id && editingCell?.field === "nome" ? (
+                      <input
+                        autoFocus
+                        value={editingValue}
+                        onChange={(e) => setEditingValue(e.target.value)}
+                        onBlur={() => saveInlineEdit(produto.id, "nome", editingValue)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveInlineEdit(produto.id, "nome", editingValue);
+                          if (e.key === "Escape") setEditingCell(null);
+                        }}
+                        className="h-7 w-full bg-transparent border-b border-primary text-sm font-medium outline-none"
+                      />
+                    ) : (
+                      <span
+                        className="cursor-pointer hover:text-primary transition-colors"
+                        onClick={() => { setEditingCell({id: produto.id, field: "nome"}); setEditingValue(produto.nome); }}
+                      >
+                        {produto.nome}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    {editingCell?.id === produto.id && editingCell?.field === "preco" ? (
+                      <input
+                        autoFocus
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={editingValue}
+                        onChange={(e) => setEditingValue(e.target.value)}
+                        onBlur={() => saveInlineEdit(produto.id, "preco", editingValue)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveInlineEdit(produto.id, "preco", editingValue);
+                          if (e.key === "Escape") setEditingCell(null);
+                        }}
+                        className="h-7 w-24 bg-transparent border-b border-primary text-sm outline-none"
+                      />
+                    ) : (
+                      <span
+                        className="cursor-pointer hover:text-primary transition-colors"
+                        onClick={() => { setEditingCell({id: produto.id, field: "preco"}); setEditingValue(String(produto.preco)); }}
+                      >
+                        {formatPreço(produto.preco)}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-1">
                       <Button
                         variant="ghost"

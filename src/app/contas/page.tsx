@@ -425,13 +425,13 @@ export default function ContasPage() {
                   </TableRow>
                 ) : (
                   contas.map((item) => (
-                    <TableRow key={item.id} className={getRowClassName(item)}>
+                    <TableRow key={item.id} className={`cursor-pointer hover:bg-accent/50 transition-colors ${getRowClassName(item)}`} onDoubleClick={() => openEditConta(item)}>
                       <TableCell className="font-medium">{item.fornecedorNome}</TableCell>
                       <TableCell className="hidden sm:table-cell">{getCategoriaNome(item)}</TableCell>
                       <TableCell>{formatPrice(item.valor)}</TableCell>
                       <TableCell className="hidden sm:table-cell">{formatDate(item.vencimento)}</TableCell>
                       <TableCell>{getSituacaoBadge(item)}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
                           {item.situacao === "Pendente" && (
                             <Button variant="ghost" size="icon-sm" onClick={() => handleMarkPago(item.id)} title="Marcar como pago">
@@ -524,10 +524,10 @@ export default function ContasPage() {
                   </TableRow>
                 ) : (
                   fornecedores.map((item) => (
-                    <TableRow key={item.id}>
+                    <TableRow key={item.id} className="cursor-pointer hover:bg-accent/50 transition-colors" onDoubleClick={() => openEditFornecedor(item)}>
                       <TableCell className="font-medium">{item.nome}</TableCell>
                       <TableCell className="text-center"><Badge variant="outline">{item._count.contas}</Badge></TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
                           <Button variant="ghost" size="icon-sm" onClick={() => openEditFornecedor(item)}><Pencil className="size-4" /></Button>
                           <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteFornecedor(item.id)}><Trash2 className="size-4 text-destructive" /></Button>

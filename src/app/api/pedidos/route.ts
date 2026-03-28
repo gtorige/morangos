@@ -119,6 +119,9 @@ export async function GET(request: NextRequest) {
       if (valorMax) where.total.lte = Number(valorMax);
     }
 
+    const limit = searchParams.get("limit");
+    const orderBy = searchParams.get("orderBy");
+
     const pedidos = await prisma.pedido.findMany({
       where,
       include: {
@@ -126,7 +129,8 @@ export async function GET(request: NextRequest) {
         formaPagamento: true,
         itens: { include: { produto: true } },
       },
-      orderBy: { dataPedido: "desc" },
+      orderBy: { dataPedido: orderBy === "asc" ? "asc" : "desc" },
+      ...(limit ? { take: Number(limit) } : {}),
     });
 
     return NextResponse.json(pedidos);

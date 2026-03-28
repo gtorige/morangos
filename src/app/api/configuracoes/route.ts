@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 
     for (const [key, envVal] of Object.entries(envDefaults)) {
       if (envVal && !configs.find((c: { chave: string }) => c.chave === key)) {
-        configs.push({ id: 0, chave: key, valor: envVal });
+        configs.push({ id: 0, chave: key, valor: envVal } as typeof configs[number]);
       }
     }
 

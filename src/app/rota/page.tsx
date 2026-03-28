@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +23,11 @@ import {
   Route,
   Clock,
   Loader2,
+  Plus,
+  Trash2,
+  Star,
+  X,
+  Settings,
 } from "lucide-react";
 
 interface Cliente {
@@ -52,6 +58,19 @@ interface RotaInfo {
   deliveryDurationMinutes: number;
   returnDurationMinutes: number;
   mapUrl: string;
+}
+
+interface LocalFrequente {
+  id: number;
+  nome: string;
+  endereco: string;
+  plusCode: string;
+}
+
+interface Parada {
+  id: number;
+  nome: string;
+  endereco: string;
 }
 
 function fmt(value: number) {
@@ -94,8 +113,17 @@ export default function RotaPage() {
   const [savingEndereco, setSavingEndereco] = useState(false);
   const [showEnderecoForm, setShowEnderecoForm] = useState(false);
 
+  const [locaisFrequentes, setLocaisFrequentes] = useState<LocalFrequente[]>([]);
+  const [paradas, setParadas] = useState<Parada[]>([]);
+  const [selectedLocalId, setSelectedLocalId] = useState("");
+  const [showGerenciarLocais, setShowGerenciarLocais] = useState(false);
+  const [novoLocalNome, setNovoLocalNome] = useState("");
+  const [novoLocalEndereco, setNovoLocalEndereco] = useState("");
+  const [savingLocal, setSavingLocal] = useState(false);
+
   useEffect(() => {
     fetchEnderecoPartida();
+    fetchLocaisFrequentes();
   }, []);
 
   useEffect(() => {
@@ -113,6 +141,68 @@ export default function RotaPage() {
       }
     } catch (error) {
       console.error("Erro ao buscar endereço de partida:", error);
+    }
+  }
+
+  async function fetchLocaisFrequentes() {
+    try {
+      const res = await fetch("/api/locais-frequentes");
+      if (res.ok) {
+        const data = await res.json();
+        setLocaisFrequentes(data);
+      }
+    } catch (error) {
+      console.error("Erro ao buscar locais frequentes:", error);
+    }
+  }
+
+  function adicionarParada() {
+    if (!selectedLocalId) return;
+    const local = locaisFrequentes.find((l) => String(l.id) === selectedLocalId);
+    if (!local) return;
+    // Avoid duplicates
+    if (paradas.some((p) => p.id === local.id)) return;
+    setParadas([...paradas, { id: local.id, nome: local.nome, endereco: local.endereco }]);
+    setSelectedLocalId("");
+    setRotaInfo(null);
+  }
+
+  function removerParada(id: number) {
+    setParadas(paradas.filter((p) => p.id !== id));
+    setRotaInfo(null);
+  }
+
+  async function criarLocalFrequente() {
+    if (!novoLocalNome.trim()) return;
+    try {
+      setSavingLocal(true);
+      const res = await fetch("/api/locais-frequentes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome: novoLocalNome.trim(), endereco: novoLocalEndereco.trim() }),
+      });
+      if (res.ok) {
+        setNovoLocalNome("");
+        setNovoLocalEndereco("");
+        await fetchLocaisFrequentes();
+      }
+    } catch (error) {
+      console.error("Erro ao criar local:", error);
+    } finally {
+      setSavingLocal(false);
+    }
+  }
+
+  async function excluirLocalFrequente(id: number) {
+    try {
+      const res = await fetch(`/api/locais-frequentes/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        // Remove from paradas if it was added
+        setParadas(paradas.filter((p) => p.id !== id));
+        await fetchLocaisFrequentes();
+      }
+    } catch (error) {
+      console.error("Erro ao excluir local:", error);
     }
   }
 
@@ -158,10 +248,12 @@ export default function RotaPage() {
         pedidoId: p.id,
       }));
 
+      const paradasPayload = paradas.map((p) => ({ endereco: p.endereco }));
+
       const res = await fetch("/api/rota/otimizar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ origin: enderecoSalvo, waypoints }),
+        body: JSON.stringify({ origin: enderecoSalvo, waypoints, paradas: paradasPayload }),
       });
 
       if (!res.ok) {
@@ -203,7 +295,11 @@ export default function RotaPage() {
       const { optimizedOrder, totalDistanceKm, totalDurationMinutes, deliveryDistanceKm, deliveryDurationMinutes, returnDurationMinutes } = data;
 
       // Reorder pedidos based on optimized order
-      const reordered = optimizedOrder.map((idx: number) => pedidos[idx]);
+      // optimizedOrder indices may include paradas (idx >= pedidos.length), filter those out
+      const reordered = optimizedOrder
+        .filter((idx: number) => idx < pedidos.length)
+        .map((idx: number) => pedidos[idx])
+        .filter(Boolean);
       setPedidos(reordered);
 
       // Fetch embed map URL from server
@@ -292,6 +388,13 @@ export default function RotaPage() {
       waypoints.push(encodeURIComponent(buildAddress(p.cliente)));
     });
 
+    // Include additional paradas
+    paradas.forEach((p) => {
+      if (p.endereco.trim()) {
+        waypoints.push(encodeURIComponent(p.endereco.trim()));
+      }
+    });
+
     if (enderecoSalvo) {
       waypoints.push(encodeURIComponent(enderecoSalvo));
     }
@@ -367,6 +470,140 @@ export default function RotaPage() {
         </CardContent>
       </Card>
 
+      {/* Paradas Adicionais */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center justify-between text-sm font-medium">
+            <div className="flex items-center gap-2">
+              <Star className="size-4" />
+              Paradas Adicionais
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowGerenciarLocais(!showGerenciarLocais)}
+            >
+              <Settings className="size-4" />
+              Gerenciar Locais
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {/* Add parada from locais frequentes */}
+          <div className="flex gap-2">
+            <select
+              className="flex h-8 flex-1 items-center rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+              value={selectedLocalId}
+              onChange={(e) => setSelectedLocalId(e.target.value)}
+            >
+              <option value="">Selecione um local frequente...</option>
+              {locaisFrequentes
+                .filter((l) => !paradas.some((p) => p.id === l.id))
+                .map((l) => (
+                  <option key={l.id} value={String(l.id)}>
+                    {l.nome} — {l.endereco}
+                  </option>
+                ))}
+            </select>
+            <Button size="sm" onClick={adicionarParada} disabled={!selectedLocalId} className="h-8">
+              <Plus className="size-4" />
+              Adicionar
+            </Button>
+          </div>
+
+          {/* Added paradas */}
+          {paradas.length > 0 && (
+            <div className="space-y-2">
+              {paradas.map((parada) => (
+                <div
+                  key={parada.id}
+                  className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{parada.nome}</p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <MapPin className="size-3 shrink-0" />
+                      {parada.endereco}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => removerParada(parada.id)}
+                  >
+                    <X className="size-4 text-destructive" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Gerenciar Locais Frequentes */}
+          {showGerenciarLocais && (
+            <div className="space-y-3 border-t border-border pt-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Gerenciar Locais Frequentes
+              </p>
+
+              {/* Add new local */}
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Input
+                  placeholder="Nome do local"
+                  value={novoLocalNome}
+                  onChange={(e) => setNovoLocalNome(e.target.value)}
+                  className="h-8 text-sm"
+                />
+                <Input
+                  placeholder="Endereço completo"
+                  value={novoLocalEndereco}
+                  onChange={(e) => setNovoLocalEndereco(e.target.value)}
+                  className="h-8 text-sm"
+                />
+                <Button
+                  size="sm"
+                  onClick={criarLocalFrequente}
+                  disabled={savingLocal || !novoLocalNome.trim()}
+                  className="h-8 shrink-0"
+                >
+                  <Plus className="size-4" />
+                  {savingLocal ? "Salvando..." : "Criar"}
+                </Button>
+              </div>
+
+              {/* List existing locais */}
+              {locaisFrequentes.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Nenhum local frequente cadastrado.
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {locaisFrequentes.map((local) => (
+                    <div
+                      key={local.id}
+                      className="flex items-center justify-between rounded-lg px-3 py-1.5 hover:bg-muted/50"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-sm">{local.nome}</span>
+                        <span className="text-xs text-muted-foreground ml-2">
+                          {local.endereco}
+                        </span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => excluirLocalFrequente(local.id)}
+                      >
+                        <Trash2 className="size-4 text-destructive" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Data */}
       <div className="space-y-1">
         <Label htmlFor="data" className="text-xs">Data</Label>
@@ -388,6 +625,12 @@ export default function RotaPage() {
             <Play className="size-4" />
             {bulkLoading ? "Iniciando..." : "Iniciar Entregas"}
           </Button>
+          <Link href="/entrega">
+            <Button variant="outline">
+              <Truck className="size-4" />
+              Abrir Modo Entrega
+            </Button>
+          </Link>
         </div>
       )}
 

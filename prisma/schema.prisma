@@ -185,3 +185,11 @@ model Configuracao {
 
   @@map("configuracoes")
 }
+
+model LocalFrequente {
+  id       Int    @id @default(autoincrement())
+  nome     String
+  endereco String
+  plusCode String @default("") @map("plus_code")
+  @@map("locais_frequentes")
+}

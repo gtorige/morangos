@@ -17,7 +17,21 @@
       "Bash(npm install:*)",
       "Bash(grep -n '\\\\$\\\\|`\\\\|>\\\\|<\\\\|\"\"\"\"\\\\|Write-Host' \"C:\\\\Users\\\\Gabriel Torige\\\\morangos\\\\install.ps1\")",
       "Bash(grep -n \"Write-Host.*\\\\`$\\\\|Write-Host.*\\\\\\(\\\\|>.*\\\\|\\\\|\" \"C:\\\\Users\\\\Gabriel Torige\\\\morangos\\\\install.ps1\")",
-      "Bash(grep -E '\\\\$\\\\{|\\\\$\\\\\\(|Write-Host.*\\\\$' \"C:\\\\Users\\\\Gabriel Torige\\\\morangos\\\\install.ps1\")"
+      "Bash(grep -E '\\\\$\\\\{|\\\\$\\\\\\(|Write-Host.*\\\\$' \"C:\\\\Users\\\\Gabriel Torige\\\\morangos\\\\install.ps1\")",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(where npm.cmd)",
+      "Bash(curl -s http://localhost:3000/api/clientes)",
+      "Bash(curl -s -w \"\\\\n%{http_code}\" http://localhost:3000/api/clientes)",
+      "Bash(node -e 'const {PrismaClient} = require\\(\"\"@prisma/client\"\"\\); const p = new PrismaClient\\(\\); p.usuario.findMany\\({select:{id:true,username:true,nome:true,isAdmin:true}}\\).then\\(u => { console.log\\(JSON.stringify\\(u\\)\\); process.exit\\(0\\); }\\)')",
+      "Bash(node -e ':*)",
+      "Bash(npm run:*)",
+      "Bash(npx.cmd prisma:*)",
+      "Bash(netstat -ano)",
+      "Bash(findstr :3000)",
+      "Bash(findstr LISTENING)",
+      "Bash(node -e \":*)",
+      "Bash(npx.cmd next:*)",
+      "Bash(taskkill //F //PID 40012)"
     ]
   }
 }

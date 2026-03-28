@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const origin: string = body.origin;
     const waypoints: Waypoint[] = body.waypoints;
+    const paradas: { endereco: string }[] = body.paradas || [];
 
     if (!origin || !waypoints || waypoints.length === 0) {
       return NextResponse.json(
@@ -45,8 +46,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Combine delivery waypoints with additional paradas (stops)
+    const allIntermediates = [
+      ...waypoints.map((wp) => ({ address: wp.address })),
+      ...paradas.filter((p) => p.endereco?.trim()).map((p) => ({ address: p.endereco.trim() })),
+    ];
+
     // For single waypoint, no optimization needed — just get route info
-    const needsOptimization = waypoints.length > 1;
+    const needsOptimization = allIntermediates.length > 1;
 
     // Build the Routes API request
     const routesRequest: Record<string, unknown> = {
@@ -56,9 +63,7 @@ export async function POST(request: NextRequest) {
       destination: {
         address: origin, // Return to origin
       },
-      intermediates: waypoints.map((wp) => ({
-        address: wp.address,
-      })),
+      intermediates: allIntermediates,
       travelMode: "DRIVE",
       routingPreference: "TRAFFIC_AWARE",
       languageCode: "pt-BR",
@@ -116,8 +121,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Map the optimized order back to pedido IDs
-    const optimizedOrder = route.optimizedIntermediateWaypointIndex || waypoints.map((_, i) => i);
-    const optimizedWaypoints = optimizedOrder.map((idx) => waypoints[idx]);
+    // allIntermediates = [...waypoints (pedidos), ...paradas]
+    // Google returns indices into allIntermediates
+    const optimizedOrder = route.optimizedIntermediateWaypointIndex || allIntermediates.map((_, i) => i);
+    const numPedidos = waypoints.length;
+    // Filter out parada indices and map back to waypoints
+    const optimizedWaypoints = optimizedOrder
+      .filter((idx: number) => idx < numPedidos)
+      .map((idx: number) => waypoints[idx]);
 
     // Parse total duration (e.g. "3600s" -> seconds)
     const parseDuration = (d: string | undefined) => {

@@ -98,4 +98,17 @@
   select, input, textarea, button {
     font-family: inherit;
   }
+  /* Make date inputs fully clickable — click anywhere opens the picker */
+  input[type="date"] {
+    cursor: pointer;
+    position: relative;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    opacity: 0;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
 }

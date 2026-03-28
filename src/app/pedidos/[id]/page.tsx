@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -113,6 +113,12 @@ export default function EditarPedidoPage() {
   const [itens, setItens] = useState<ItemPedido[]>([]);
   const [taxaEntrega, setTaxaEntrega] = useState(5.0);
 
+  // Product autocomplete state per item
+  const [produtoSearches, setProdutoSearches] = useState<Record<number, string>>({});
+  const [produtoDropdowns, setProdutoDropdowns] = useState<Record<number, boolean>>({});
+  const [produtoHighlights, setProdutoHighlights] = useState<Record<number, number>>({});
+  const produtoRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
   useEffect(() => {
     Promise.all([
       fetchClientes(),
@@ -199,15 +205,20 @@ export default function EditarPedidoPage() {
       setStatusEntrega(pedido.statusEntrega || "Pendente");
       setOrdemRota(pedido.ordemRota != null ? String(pedido.ordemRota) : "");
       setTaxaEntrega(pedido.taxaEntrega ?? 5.0);
-      setItens(
-        pedido.itens.map((item) => ({
-          produtoId: String(item.produtoId),
-          quantidade: String(item.quantidade),
-          precoUnitario: item.precoUnitario,
-          subtotal: item.subtotal,
-          precoManual: false,
-        }))
-      );
+      const mappedItens = pedido.itens.map((item) => ({
+        produtoId: String(item.produtoId),
+        quantidade: String(item.quantidade),
+        precoUnitario: item.precoUnitario,
+        subtotal: item.subtotal,
+        precoManual: false,
+      }));
+      setItens(mappedItens);
+      // Populate autocomplete search terms
+      const searches: Record<number, string> = {};
+      pedido.itens.forEach((item, i) => {
+        if (item.produto?.nome) searches[i] = item.produto.nome;
+      });
+      setProdutoSearches(searches);
     } catch (error) {
       console.error("Erro ao buscar pedido:", error);
     } finally {
@@ -225,6 +236,68 @@ export default function EditarPedidoPage() {
 
   function getPromocaoForProduto(produtoId: string): Promocao | undefined {
     return promocoes.find((p) => String(p.produtoId) === produtoId);
+  }
+
+  // Close product dropdowns on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      const target = e.target as Node;
+      const anyOpen = Object.values(produtoDropdowns).some(Boolean);
+      if (!anyOpen) return;
+      const newDropdowns = { ...produtoDropdowns };
+      let changed = false;
+      for (const key of Object.keys(produtoDropdowns)) {
+        const idx = Number(key);
+        if (produtoDropdowns[idx] && produtoRefs.current[idx] && !produtoRefs.current[idx]!.contains(target)) {
+          newDropdowns[idx] = false;
+          changed = true;
+        }
+      }
+      if (changed) setProdutoDropdowns(newDropdowns);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [produtoDropdowns]);
+
+  function getFilteredProdutos(index: number) {
+    const search = (produtoSearches[index] || "").toLowerCase();
+    if (!search) return produtos;
+    return produtos.filter((p) => p.nome.toLowerCase().includes(search));
+  }
+
+  function handleProdutoSelect(index: number, produtoId: string) {
+    const produto = produtos.find((p) => String(p.id) === produtoId);
+    if (produto) {
+      setProdutoSearches((prev) => ({ ...prev, [index]: produto.nome }));
+    }
+    setProdutoDropdowns((prev) => ({ ...prev, [index]: false }));
+    setProdutoHighlights((prev) => ({ ...prev, [index]: 0 }));
+    handleItemChange(index, "produtoId", produtoId);
+  }
+
+  function handleProdutoKeyDown(index: number, e: React.KeyboardEvent) {
+    const filtered = getFilteredProdutos(index);
+    const highlight = produtoHighlights[index] || 0;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setProdutoHighlights((prev) => ({ ...prev, [index]: Math.min(highlight + 1, filtered.length - 1) }));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setProdutoHighlights((prev) => ({ ...prev, [index]: Math.max(highlight - 1, 0) }));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (filtered.length > 0) {
+        handleProdutoSelect(index, String(filtered[highlight]?.id));
+      }
+    } else if (e.key === "Escape") {
+      setProdutoDropdowns((prev) => ({ ...prev, [index]: false }));
+    } else if (e.key === "Tab") {
+      if (filtered.length === 1) {
+        handleProdutoSelect(index, String(filtered[0].id));
+      }
+      setProdutoDropdowns((prev) => ({ ...prev, [index]: false }));
+    }
   }
 
   function calcSubtotal(item: ItemPedido): { subtotal: number; qtdCobrada: number | null } {
@@ -555,22 +628,60 @@ export default function EditarPedidoPage() {
                       <div className="space-y-2 sm:space-y-0">
                         {/* Mobile: stacked / Desktop: grid */}
                         <div className="grid grid-cols-[1fr_40px] sm:grid-cols-[1fr_80px_80px_80px_40px] items-end gap-2">
-                          <div className="space-y-1">
+                          <div className="space-y-1 relative" ref={(el) => { produtoRefs.current[index] = el; }}>
                             <Label className="text-xs">Produto</Label>
-                            <select
-                              value={item.produtoId}
-                              onChange={(e) =>
-                                handleItemChange(index, "produtoId", e.target.value)
-                              }
-                              className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                            >
-                              <option value="">Selecione...</option>
-                              {produtos.map((p) => (
-                                <option key={p.id} value={String(p.id)}>
-                                  {p.nome}
-                                </option>
-                              ))}
-                            </select>
+                            <Input
+                              placeholder="Buscar produto..."
+                              value={produtoSearches[index] ?? (produto?.nome || "")}
+                              onChange={(e) => {
+                                setProdutoSearches((prev) => ({ ...prev, [index]: e.target.value }));
+                                setProdutoDropdowns((prev) => ({ ...prev, [index]: true }));
+                                setProdutoHighlights((prev) => ({ ...prev, [index]: 0 }));
+                                if (!e.target.value) handleItemChange(index, "produtoId", "");
+                              }}
+                              onFocus={() => {
+                                setProdutoDropdowns((prev) => ({ ...prev, [index]: true }));
+                              }}
+                              onKeyDown={(e) => handleProdutoKeyDown(index, e)}
+                              autoComplete="off"
+                            />
+                            {produtoDropdowns[index] && (() => {
+                              const filtered = getFilteredProdutos(index);
+                              if (filtered.length === 0) return null;
+                              const hl = produtoHighlights[index] || 0;
+                              return (
+                                <div className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border bg-popover shadow-md">
+                                  {filtered.map((p, pi) => {
+                                    const pPromo = getPromocaoForProduto(String(p.id));
+                                    const hasDiscountPromo = pPromo && (pPromo.tipo || "desconto") === "desconto" && pPromo.precoPromocional;
+                                    return (
+                                      <button
+                                        key={p.id}
+                                        type="button"
+                                        className={`w-full px-3 py-2 text-left text-sm flex items-center justify-between ${
+                                          pi === hl ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
+                                        }`}
+                                        onMouseEnter={() => setProdutoHighlights((prev) => ({ ...prev, [index]: pi }))}
+                                        onClick={() => handleProdutoSelect(index, String(p.id))}
+                                      >
+                                        <span className="font-medium">{p.nome}</span>
+                                        <span className="ml-2 text-xs">
+                                          {hasDiscountPromo ? (
+                                            <>
+                                              <span className="line-through text-muted-foreground">{formatPrice(p.preco)}</span>
+                                              {" "}
+                                              <span className="text-green-400">{formatPrice(pPromo.precoPromocional)}</span>
+                                            </>
+                                          ) : (
+                                            <span className="text-muted-foreground">{formatPrice(p.preco)}</span>
+                                          )}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
                           </div>
 
                           <div className="hidden sm:block space-y-1">

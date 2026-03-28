@@ -154,12 +154,12 @@ export default function FornecedoresPage() {
               </TableRow>
             ) : (
               items.map((item) => (
-                <TableRow key={item.id}>
+                <TableRow key={item.id} className="cursor-pointer hover:bg-accent/50 transition-colors" onDoubleClick={() => openEdit(item)}>
                   <TableCell className="font-medium">{item.nome}</TableCell>
                   <TableCell className="text-center">
                     <Badge variant="outline">{item._count.contas}</Badge>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost"

@@ -223,7 +223,7 @@ export default function PromocoesPage() {
               </TableRow>
             ) : (
               items.map((item) => (
-                <TableRow key={item.id}>
+                <TableRow key={item.id} className="cursor-pointer hover:bg-accent/50 transition-colors" onDoubleClick={() => openEdit(item)}>
                   <TableCell className="font-medium">{item.nome}</TableCell>
                   <TableCell className="hidden sm:table-cell">{item.produto?.nome}</TableCell>
                   <TableCell className="hidden md:table-cell">
@@ -242,7 +242,7 @@ export default function PromocoesPage() {
                       <Badge className="bg-red-600 text-white">Inativo</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       <Button variant="ghost" size="icon-sm" onClick={() => openEdit(item)}>
                         <Pencil className="size-4" />

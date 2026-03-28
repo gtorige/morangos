@@ -4,10 +4,9 @@ import type { ReactNode } from "react";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { SessionProvider, useSession, signOut } from "next-auth/react";
 import {
-  Home,
   Plus,
   ClipboardList,
   Users,
@@ -23,6 +22,12 @@ import {
   LogOut,
   KeyRound,
   Settings,
+  Truck,
+  AlertTriangle,
+  DollarSign,
+  GripVertical,
+  Pencil,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,7 +54,6 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 const navItems = [
-  { href: "/", label: "Início", icon: Home },
   { href: "/resumo", label: "Resumo", icon: BarChart3 },
   { href: "/pedidos/novo", label: "Novo Pedido", icon: Plus },
   { href: "/pedidos", label: "Pedidos", icon: ClipboardList },
@@ -59,6 +63,7 @@ const navItems = [
   { href: "/promocoes", label: "Promoções", icon: Tag },
   { href: "/contas", label: "Fornecedores", icon: Receipt },
   { href: "/rota", label: "Rota de Entrega", icon: MapPin },
+  { href: "/entrega", label: "Modo Entrega", icon: Truck },
   { href: "/separacao", label: "Separação", icon: ClipboardCheck },
 ];
 
@@ -66,6 +71,41 @@ const adminItems = [
   { href: "/admin/usuarios", label: "Usuários", icon: Shield },
   { href: "/admin/configuracoes", label: "Configurações", icon: Settings },
 ];
+
+const MENU_ORDER_KEY = "menu-order";
+
+function getOrderedNavItems(): typeof navItems {
+  if (typeof window === "undefined") return navItems;
+  try {
+    const saved = localStorage.getItem(MENU_ORDER_KEY);
+    if (!saved) return navItems;
+    const savedOrder: string[] = JSON.parse(saved);
+    const currentPaths = new Set(navItems.map((item) => item.href));
+    // Filter out removed items
+    const validOrder = savedOrder.filter((path) => currentPaths.has(path));
+    // Find new items not in saved order
+    const savedSet = new Set(validOrder);
+    const newItems = navItems.filter((item) => !savedSet.has(item.href));
+    // Build ordered list
+    const ordered = validOrder.map(
+      (path) => navItems.find((item) => item.href === path)!
+    );
+    return [...ordered, ...newItems];
+  } catch {
+    return navItems;
+  }
+}
+
+function saveMenuOrder(items: typeof navItems) {
+  try {
+    localStorage.setItem(
+      MENU_ORDER_KEY,
+      JSON.stringify(items.map((item) => item.href))
+    );
+  } catch {
+    // ignore
+  }
+}
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
@@ -78,6 +118,87 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const [pwError, setPwError] = useState("");
   const [pwSuccess, setPwSuccess] = useState(false);
   const [pwSaving, setPwSaving] = useState(false);
+
+  // Menu reorder state
+  const [orderedItems, setOrderedItems] = useState(navItems);
+  const [editMode, setEditMode] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const dragCounter = useRef(0);
+
+  useEffect(() => {
+    setOrderedItems(getOrderedNavItems());
+  }, []);
+
+  const handleDragStart = useCallback(
+    (e: React.DragEvent, index: number) => {
+      if (!editMode) return;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(index));
+      setDragIndex(index);
+    },
+    [editMode]
+  );
+
+  const handleDragOver = useCallback(
+    (e: React.DragEvent, index: number) => {
+      if (!editMode) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      setDragOverIndex(index);
+    },
+    [editMode]
+  );
+
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent, index: number) => {
+      if (!editMode) return;
+      e.preventDefault();
+      dragCounter.current++;
+      setDragOverIndex(index);
+    },
+    [editMode]
+  );
+
+  const handleDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      if (!editMode) return;
+      e.preventDefault();
+      dragCounter.current--;
+      if (dragCounter.current === 0) {
+        setDragOverIndex(null);
+      }
+    },
+    [editMode]
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent, dropIndex: number) => {
+      if (!editMode) return;
+      e.preventDefault();
+      dragCounter.current = 0;
+      const fromIndex = dragIndex;
+      if (fromIndex === null || fromIndex === dropIndex) {
+        setDragIndex(null);
+        setDragOverIndex(null);
+        return;
+      }
+      const newItems = [...orderedItems];
+      const [moved] = newItems.splice(fromIndex, 1);
+      newItems.splice(dropIndex, 0, moved);
+      setOrderedItems(newItems);
+      saveMenuOrder(newItems);
+      setDragIndex(null);
+      setDragOverIndex(null);
+    },
+    [editMode, dragIndex, orderedItems]
+  );
+
+  const handleDragEnd = useCallback(() => {
+    dragCounter.current = 0;
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }, []);
 
   async function handleChangePassword() {
     setPwError("");
@@ -116,26 +237,65 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       </div>
       <Separator />
       <nav className="flex-1 flex flex-col gap-1 p-3">
-        {navItems.map((item) => {
+        <button
+          type="button"
+          onClick={() => setEditMode(!editMode)}
+          className="flex items-center gap-2 rounded-lg px-3 py-1.5 mb-1 text-xs font-medium text-muted-foreground/60 hover:text-muted-foreground transition-colors self-start"
+        >
+          {editMode ? (
+            <>
+              <Check className="h-3 w-3" />
+              Concluir
+            </>
+          ) : (
+            <>
+              <Pencil className="h-3 w-3" />
+              Editar Menu
+            </>
+          )}
+        </button>
+        {orderedItems.map((item, index) => {
           const Icon = item.icon;
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
+          const isActive = pathname.startsWith(item.href);
+          const isDragging = dragIndex === index;
+          const isOver = dragOverIndex === index && dragIndex !== index;
           return (
-            <Link
+            <div
               key={item.href}
-              href={item.href}
-              onClick={onNavigate}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-              }`}
+              draggable={editMode}
+              onDragStart={(e) => handleDragStart(e, index)}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDragEnter={(e) => handleDragEnter(e, index)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, index)}
+              onDragEnd={handleDragEnd}
+              className={`relative ${isDragging ? "opacity-50" : ""}`}
             >
-              <Icon className="h-4 w-4" />
-              {item.label}
-            </Link>
+              {isOver && (
+                <div className="absolute -top-[1.5px] left-2 right-2 h-[3px] rounded-full bg-primary z-10" />
+              )}
+              <Link
+                href={item.href}
+                onClick={(e) => {
+                  if (editMode) {
+                    e.preventDefault();
+                    return;
+                  }
+                  onNavigate?.();
+                }}
+                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                } ${editMode ? "border border-border/50 cursor-grab active:cursor-grabbing" : ""}`}
+              >
+                {editMode && (
+                  <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                )}
+                <Icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            </div>
           );
         })}
 
@@ -243,11 +403,80 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+interface Notificacoes {
+  pagamentosVencidos: { id: number; cliente: string; total: number; diasVencido: number; dataEntrega: string }[];
+  contasVencendo: { id: number; fornecedor: string; valor: number; vencimento: string; diasParaVencer: number }[];
+  contasVencidas: { id: number; fornecedor: string; valor: number; vencimento: string; diasVencido: number }[];
+  contasProximasVencer: { id: number; fornecedor: string; valor: number; vencimento: string; diasParaVencer: number }[];
+}
+
+function NotificationBanners() {
+  const [notifs, setNotifs] = useState<Notificacoes | null>(null);
+
+  useEffect(() => {
+    fetch("/api/notificacoes")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data) setNotifs(data); })
+      .catch(() => {});
+  }, []);
+
+  if (!notifs) return null;
+
+  const { pagamentosVencidos, contasVencendo, contasVencidas, contasProximasVencer = [] } = notifs;
+  const hasAny = pagamentosVencidos.length > 0 || contasVencendo.length > 0 || contasVencidas.length > 0 || contasProximasVencer.length > 0;
+  if (!hasAny) return null;
+
+  return (
+    <div className="space-y-2 mb-4">
+      {pagamentosVencidos.length > 0 && (
+        <a href="/pedidos?situacaoPagamento=Pendente">
+          <div className="flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm hover:bg-amber-500/15 transition-colors cursor-pointer">
+            <DollarSign className="size-4 text-amber-500 shrink-0" />
+            <span className="text-amber-200">
+              <strong>{pagamentosVencidos.length}</strong> pedido{pagamentosVencidos.length > 1 ? "s" : ""} com pagamento pendente ha mais de 1 dia
+            </span>
+          </div>
+        </a>
+      )}
+      {contasVencendo.length > 0 && (
+        <Link href="/contas">
+          <div className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-2.5 text-sm hover:bg-yellow-500/15 transition-colors cursor-pointer">
+            <AlertTriangle className="size-4 text-yellow-500 shrink-0" />
+            <span className="text-yellow-200">
+              <strong>{contasVencendo.length}</strong> conta{contasVencendo.length > 1 ? "s" : ""} vence{contasVencendo.length > 1 ? "m" : ""} hoje
+            </span>
+          </div>
+        </Link>
+      )}
+      {contasProximasVencer.length > 0 && (
+        <Link href="/contas">
+          <div className="flex items-center gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2.5 text-sm hover:bg-blue-500/15 transition-colors cursor-pointer">
+            <AlertTriangle className="size-4 text-blue-500 shrink-0" />
+            <span className="text-blue-200">
+              <strong>{contasProximasVencer.length}</strong> conta{contasProximasVencer.length > 1 ? "s" : ""} vence{contasProximasVencer.length > 1 ? "m" : ""} nos próximos 5 dias
+            </span>
+          </div>
+        </Link>
+      )}
+      {contasVencidas.length > 0 && (
+        <Link href="/contas">
+          <div className="flex items-center gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm hover:bg-red-500/15 transition-colors cursor-pointer">
+            <AlertTriangle className="size-4 text-red-500 shrink-0" />
+            <span className="text-red-200">
+              <strong>{contasVencidas.length}</strong> conta{contasVencidas.length > 1 ? "s" : ""} vencida{contasVencidas.length > 1 ? "s" : ""}
+            </span>
+          </div>
+        </Link>
+      )}
+    </div>
+  );
+}
+
 function AppShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
-  const noShellPages = ["/login", "/setup"];
+  const noShellPages = ["/login", "/setup", "/entrega"];
   if (noShellPages.includes(pathname)) {
     return <>{children}</>;
   }
@@ -279,7 +508,10 @@ function AppShell({ children }: { children: ReactNode }) {
 
         {/* Main content */}
         <main className="flex-1 md:ml-64 min-w-0 overflow-x-hidden">
-          <div className="p-4 md:p-6">{children}</div>
+          <div className="p-4 md:p-6">
+            <NotificationBanners />
+            {children}
+          </div>
         </main>
       </div>
     </SessionProvider>
