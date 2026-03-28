@@ -14,7 +14,7 @@ export default function proxy(request: NextRequest) {
   }
 
   // Public paths - no auth check
-  const publicPaths = ["/login", "/setup", "/api/auth", "/api/setup"];
+  const publicPaths = ["/login", "/setup", "/api/auth", "/api/setup", "/api/login"];
   if (publicPaths.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
