@@ -477,6 +477,13 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     $iniciarScript += 'Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -Command Set-Location ''' + $morangosDir + '''; npm.cmd run dev" -WindowStyle Minimized' + "`n"
     $iniciarScript += 'Start-Sleep -Seconds 8' + "`n"
     $iniciarScript += 'Start-Process http://localhost:3000' + "`n"
+    $iniciarScript += '$localIP = $null' + "`n"
+    $iniciarScript += 'try { $localIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notmatch "^(127\.|169\.254\.)" } | Sort-Object PrefixLength | Select-Object -First 1).IPAddress } catch {}' + "`n"
+    $iniciarScript += 'Write-Host ""' + "`n"
+    $iniciarScript += 'Write-Host "App iniciado! Acesso: http://localhost:3000" -ForegroundColor Green' + "`n"
+    $iniciarScript += 'if ($localIP) { Write-Host "Rede local (celular): http://${localIP}:3000" -ForegroundColor Cyan }' + "`n"
+    $iniciarScript += 'Write-Host ""' + "`n"
+    $iniciarScript += 'Start-Sleep -Seconds 5' + "`n"
     Set-Content -Path $iniciarPath -Value $iniciarScript -Encoding UTF8
 
     # ============================================================
@@ -518,8 +525,35 @@ Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -Command", "Set-
 Write-Host "Aguardando o app iniciar..." -ForegroundColor DarkGray
 Start-Sleep -Seconds 8
 Start-Process "http://localhost:3000"
+
+# Detectar IP local para acesso pela rede
+$localIP = $null
+try {
+    $localIP = (Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias "*" |
+        Where-Object { $_.IPAddress -notmatch "^(127\.|169\.254\.)" } |
+        Sort-Object PrefixLength |
+        Select-Object -First 1).IPAddress
+} catch {
+    try {
+        $localIP = ([System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName()) |
+            Where-Object { $_.AddressFamily -eq 'InterNetwork' -and $_.ToString() -notmatch "^127\." } |
+            Select-Object -First 1).ToString()
+    } catch {}
+}
+
 Write-Host ""
-Write-Host "App aberto no navegador!" -ForegroundColor Green
+Write-Host "================================================" -ForegroundColor Green
+Write-Host "  APP INICIADO!" -ForegroundColor Green
+Write-Host "================================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "  Acesso neste computador:" -ForegroundColor White
+Write-Host "  http://localhost:3000" -ForegroundColor Cyan
+if ($localIP) {
+    Write-Host ""
+    Write-Host "  Acesso pela rede local (celular, tablet):" -ForegroundColor White
+    Write-Host "  http://${localIP}:3000" -ForegroundColor Cyan
+}
+Write-Host ""
 Write-Host "Pode fechar esta janela." -ForegroundColor DarkGray
 Write-Host ""
 Read-Host "Pressione Enter para continuar"
