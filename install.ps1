@@ -412,6 +412,10 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     $prismaMigExit = $LASTEXITCODE
     $ErrorActionPreference = $prevEA
     if ($prismaMigExit -ne 0) { Show-Error "Falha ao aplicar migracoes do banco de dados." }
+    Write-Host "Criando dados iniciais..." -ForegroundColor DarkGray
+    $prevEA = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
+    & node.exe prisma/seed-init.js 2>&1 | Out-Host
+    $ErrorActionPreference = $prevEA
     Write-Host "Banco de dados configurado!" -ForegroundColor Green
 
     # ============================================================
