@@ -426,48 +426,49 @@ function NotificationBanners() {
   const hasAny = pagamentosVencidos.length > 0 || contasVencendo.length > 0 || contasVencidas.length > 0 || contasProximasVencer.length > 0;
   if (!hasAny) return null;
 
+  const items: { href: string; label: string; color: string; iconColor: string; icon: ReactNode }[] = [];
+
+  if (pagamentosVencidos.length > 0)
+    items.push({
+      href: "/pedidos?situacaoPagamento=Pendente",
+      label: `${pagamentosVencidos.length} pedido${pagamentosVencidos.length > 1 ? "s" : ""} sem pagamento`,
+      color: "text-amber-300",
+      iconColor: "text-amber-400",
+      icon: <DollarSign className="size-3.5 shrink-0" />,
+    });
+  if (contasVencendo.length > 0)
+    items.push({
+      href: "/contas",
+      label: `${contasVencendo.length} conta${contasVencendo.length > 1 ? "s" : ""} vence${contasVencendo.length > 1 ? "m" : ""} hoje`,
+      color: "text-yellow-300",
+      iconColor: "text-yellow-400",
+      icon: <AlertTriangle className="size-3.5 shrink-0" />,
+    });
+  if (contasProximasVencer.length > 0)
+    items.push({
+      href: "/contas",
+      label: `${contasProximasVencer.length} conta${contasProximasVencer.length > 1 ? "s" : ""} vence${contasProximasVencer.length > 1 ? "m" : ""} em 5 dias`,
+      color: "text-blue-300",
+      iconColor: "text-blue-400",
+      icon: <AlertTriangle className="size-3.5 shrink-0" />,
+    });
+  if (contasVencidas.length > 0)
+    items.push({
+      href: "/contas",
+      label: `${contasVencidas.length} conta${contasVencidas.length > 1 ? "s" : ""} vencida${contasVencidas.length > 1 ? "s" : ""}`,
+      color: "text-red-300",
+      iconColor: "text-red-400",
+      icon: <AlertTriangle className="size-3.5 shrink-0" />,
+    });
+
   return (
-    <div className="space-y-2 mb-4">
-      {pagamentosVencidos.length > 0 && (
-        <a href="/pedidos?situacaoPagamento=Pendente">
-          <div className="flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm hover:bg-amber-500/15 transition-colors cursor-pointer">
-            <DollarSign className="size-4 text-amber-500 shrink-0" />
-            <span className="text-amber-200">
-              <strong>{pagamentosVencidos.length}</strong> pedido{pagamentosVencidos.length > 1 ? "s" : ""} com pagamento pendente ha mais de 1 dia
-            </span>
-          </div>
-        </a>
-      )}
-      {contasVencendo.length > 0 && (
-        <Link href="/contas">
-          <div className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-2.5 text-sm hover:bg-yellow-500/15 transition-colors cursor-pointer">
-            <AlertTriangle className="size-4 text-yellow-500 shrink-0" />
-            <span className="text-yellow-200">
-              <strong>{contasVencendo.length}</strong> conta{contasVencendo.length > 1 ? "s" : ""} vence{contasVencendo.length > 1 ? "m" : ""} hoje
-            </span>
-          </div>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border bg-muted/30 px-3 py-1.5 mb-4">
+      {items.map((item, i) => (
+        <Link key={i} href={item.href} className={`flex items-center gap-1.5 text-xs hover:underline ${item.color}`}>
+          <span className={item.iconColor}>{item.icon}</span>
+          {item.label}
         </Link>
-      )}
-      {contasProximasVencer.length > 0 && (
-        <Link href="/contas">
-          <div className="flex items-center gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2.5 text-sm hover:bg-blue-500/15 transition-colors cursor-pointer">
-            <AlertTriangle className="size-4 text-blue-500 shrink-0" />
-            <span className="text-blue-200">
-              <strong>{contasProximasVencer.length}</strong> conta{contasProximasVencer.length > 1 ? "s" : ""} vence{contasProximasVencer.length > 1 ? "m" : ""} nos próximos 5 dias
-            </span>
-          </div>
-        </Link>
-      )}
-      {contasVencidas.length > 0 && (
-        <Link href="/contas">
-          <div className="flex items-center gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm hover:bg-red-500/15 transition-colors cursor-pointer">
-            <AlertTriangle className="size-4 text-red-500 shrink-0" />
-            <span className="text-red-200">
-              <strong>{contasVencidas.length}</strong> conta{contasVencidas.length > 1 ? "s" : ""} vencida{contasVencidas.length > 1 ? "s" : ""}
-            </span>
-          </div>
-        </Link>
-      )}
+      ))}
     </div>
   );
 }

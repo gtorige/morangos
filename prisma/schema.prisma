@@ -193,3 +193,11 @@ model LocalFrequente {
   plusCode String @default("") @map("plus_code")
   @@map("locais_frequentes")
 }
+
+model MensagemWhatsApp {
+  id    Int    @id @default(autoincrement())
+  nome  String
+  texto String
+
+  @@map("mensagens_whatsapp")
+}

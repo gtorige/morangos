@@ -14,7 +14,10 @@ import {
   RefreshCw,
   Loader2,
   X,
+  MessageCircle,
 } from "lucide-react";
+
+const ROTA_STORAGE_KEY = "rota-lista";
 
 interface Cliente {
   id: number;
@@ -27,6 +30,14 @@ interface Cliente {
   enderecoAlternativo?: string;
 }
 
+interface PedidoItem {
+  id: number;
+  quantidade: number;
+  precoUnitario: number;
+  subtotal: number;
+  produto: { id: number; nome: string };
+}
+
 interface Pedido {
   id: number;
   clienteId: number;
@@ -36,7 +47,24 @@ interface Pedido {
   situacaoPagamento: string;
   ordemRota: number | null;
   cliente: Cliente;
+  itens: PedidoItem[];
 }
+
+interface MensagemWhatsApp {
+  id: number;
+  nome: string;
+  texto: string;
+}
+
+interface Parada {
+  id: number;
+  nome: string;
+  endereco: string;
+}
+
+type ListItem =
+  | { type: "pedido"; data: Pedido }
+  | { type: "parada"; data: Parada };
 
 function fmt(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -44,6 +72,24 @@ function fmt(value: number) {
 
 function todayString() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function buildWppUrl(telefone: string, texto: string) {
+  const num = telefone.replace(/\D/g, "");
+  const full = num.startsWith("55") ? num : `55${num}`;
+  return `https://wa.me/${full}?text=${encodeURIComponent(texto)}`;
+}
+
+function applyVars(texto: string, vars: Record<string, string>) {
+  // Normalize various unicode curly brace chars + strip zero-width chars
+  let result = texto
+    .replace(/[\u200B\u200C\u200D\uFEFF]/g, "") // zero-width chars
+    .replace(/[\uFF5B\u2774\u2775\u007B]/g, "{") // → {
+    .replace(/[\uFF5D\u2776\u2777\u007D]/g, "}"); // → }
+  for (const [key, value] of Object.entries(vars)) {
+    result = result.replace(new RegExp(`\\{\\s*${key}\\s*\\}`, "gi"), value ?? "");
+  }
+  return result;
 }
 
 function buildAddress(cliente: Cliente) {
@@ -65,25 +111,57 @@ function buildDisplayAddress(cliente: Cliente) {
 
 export default function EntregaPage() {
   const router = useRouter();
-  const [pedidos, setPedidos] = useState<Pedido[]>([]);
+  const [lista, setLista] = useState<ListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [mensagensWpp, setMensagensWpp] = useState<MensagemWhatsApp[]>([]);
+  const [wppPickerId, setWppPickerId] = useState<number | null>(null);
 
   const fetchPedidos = useCallback(async () => {
     try {
       const res = await fetch(`/api/rota?data=${todayString()}`);
-      const json = await res.json();
-      // Sort by ordemRota (nulls last), then by id
-      const sorted = (json as Pedido[]).sort((a, b) => {
-        if (a.ordemRota != null && b.ordemRota != null)
-          return a.ordemRota - b.ordemRota;
-        if (a.ordemRota != null) return -1;
-        if (b.ordemRota != null) return 1;
-        return a.id - b.id;
-      });
-      setPedidos(sorted);
+      const fetched: Pedido[] = await res.json();
+
+      // Try to restore ordered list from localStorage
+      let storedLista: ListItem[] | null = null;
+      try {
+        const raw = localStorage.getItem(ROTA_STORAGE_KEY);
+        if (raw) storedLista = JSON.parse(raw);
+      } catch {}
+
+      if (storedLista) {
+        // Merge: replace pedido data with fresh fetched data, keep paradas as-is
+        const fetchedMap = new Map(fetched.map((p) => [p.id, p]));
+        const merged: ListItem[] = storedLista
+          .map((item) => {
+            if (item.type === "parada") return item;
+            const fresh = fetchedMap.get(item.data.id);
+            return fresh ? { type: "pedido" as const, data: fresh } : null;
+          })
+          .filter(Boolean) as ListItem[];
+
+        // Add any fetched pedidos not in stored list (new orders added after optimization)
+        const storedIds = new Set(storedLista.filter((i) => i.type === "pedido").map((i) => (i.data as Pedido).id));
+        for (const p of fetched) {
+          if (!storedIds.has(p.id)) {
+            merged.push({ type: "pedido", data: p });
+          }
+        }
+
+        setLista(merged);
+      } else {
+        // No stored order — sort by ordemRota
+        const sorted = fetched.sort((a, b) => {
+          if (a.ordemRota != null && b.ordemRota != null) return a.ordemRota - b.ordemRota;
+          if (a.ordemRota != null) return -1;
+          if (b.ordemRota != null) return 1;
+          return a.id - b.id;
+        });
+        setLista(sorted.map((p) => ({ type: "pedido", data: p })));
+      }
     } catch (error) {
       console.error("Erro ao buscar pedidos:", error);
     } finally {
@@ -94,6 +172,7 @@ export default function EntregaPage() {
 
   useEffect(() => {
     fetchPedidos();
+    fetch("/api/mensagens-whatsapp").then(r => r.ok ? r.json() : []).then(setMensagensWpp).catch(() => {});
   }, [fetchPedidos]);
 
   async function handleRefresh() {
@@ -138,33 +217,21 @@ export default function EntregaPage() {
     window.open(`https://www.google.com/maps/search/?api=1&query=${address}`, "_blank");
   }
 
-  // Summary stats (all orders that were "Em rota" or delivered today)
-  const entregasRestantes = pedidos.filter(
-    (p) => p.statusEntrega === "Em rota" || p.statusEntrega === "Pendente"
-  ).length;
-  const totalAReceber = pedidos
-    .filter((p) => p.situacaoPagamento === "Pendente")
-    .reduce((sum, p) => sum + p.total, 0);
+  const pedidos = lista.filter((i) => i.type === "pedido").map((i) => i.data as Pedido);
+  const entregasRestantes = pedidos.filter((p) => p.statusEntrega === "Em rota" || p.statusEntrega === "Pendente").length;
+  const totalAReceber = pedidos.filter((p) => p.situacaoPagamento === "Pendente").reduce((sum, p) => sum + p.total, 0);
 
-  // For the final summary popup, we need all today's delivered orders too
-  // Since the API only returns non-delivered, we track delivered ones locally
   const [entregasRealizadas, setEntregasRealizadas] = useState(0);
   const [totalRecebido, setTotalRecebido] = useState(0);
   const [pgtosPendentes, setPgtosPendentes] = useState(0);
 
   async function finalizarRota() {
-    // Fetch all today's orders for the summary
     try {
       const res = await fetch(`/api/pedidos?dataEntrega=${todayString()}`);
       const todos: Pedido[] = await res.json();
       const entregues = todos.filter((p) => p.statusEntrega === "Entregue");
-      const recebido = todos
-        .filter((p) => p.situacaoPagamento === "Pago")
-        .reduce((sum, p) => sum + p.valorPago, 0);
-      const pendentes = todos.filter(
-        (p) => p.statusEntrega === "Entregue" && p.situacaoPagamento === "Pendente"
-      ).length;
-
+      const recebido = todos.filter((p) => p.situacaoPagamento === "Pago").reduce((sum, p) => sum + p.valorPago, 0);
+      const pendentes = todos.filter((p) => p.statusEntrega === "Entregue" && p.situacaoPagamento === "Pendente").length;
       setEntregasRealizadas(entregues.length);
       setTotalRecebido(recebido);
       setPgtosPendentes(pendentes);
@@ -207,99 +274,144 @@ export default function EntregaPage() {
         </div>
       </div>
 
-      {/* Order cards */}
+      {/* List */}
       <div className="p-4 space-y-3">
-        {pedidos.length === 0 ? (
+        {lista.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             <p className="text-lg">Nenhuma entrega pendente</p>
             <p className="text-sm mt-1">Todas as entregas do dia foram concluidas!</p>
           </div>
         ) : (
-          pedidos.map((pedido, index) => (
-            <Card key={pedido.id}>
-              <CardContent className="py-4 space-y-3">
-                {/* Client info */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <span className="flex items-center justify-center size-8 rounded-full bg-primary text-primary-foreground text-sm font-bold shrink-0 mt-0.5">
+          lista.map((item, index) =>
+            item.type === "parada" ? (
+              /* Parada */
+              <div
+                key={`parada-${item.data.id}`}
+                className="flex items-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-3"
+              >
+                <span className="flex items-center justify-center size-8 rounded-full bg-muted text-muted-foreground text-sm font-bold shrink-0">
+                  {index + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className="font-medium text-sm">{item.data.nome}</p>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <MapPin className="size-3 shrink-0" />
+                    {item.data.endereco}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              /* Pedido */
+              <Card
+                key={`pedido-${item.data.id}`}
+                className="cursor-pointer"
+                onClick={() => setExpandedId(expandedId === item.data.id ? null : item.data.id)}
+              >
+                <CardContent className="py-3 px-4 space-y-0">
+                  {/* Header row */}
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center justify-center size-8 rounded-full bg-primary text-primary-foreground text-sm font-bold shrink-0">
                       {index + 1}
                     </span>
-                    <div className="min-w-0">
-                      <p className="text-lg font-bold truncate">{pedido.cliente.nome}</p>
-                      <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
-                        <MapPin className="size-3.5 shrink-0" />
-                        <span className="truncate">{buildDisplayAddress(pedido.cliente)}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-base font-bold truncate">{item.data.cliente.nome}</p>
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <MapPin className="size-3 shrink-0" />
+                        <span className="truncate">{buildDisplayAddress(item.data.cliente)}</span>
                       </p>
                     </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-base font-bold">{fmt(item.data.total)}</p>
+                      <Badge variant={item.data.situacaoPagamento === "Pago" ? "default" : "outline"} className="text-xs">
+                        {item.data.situacaoPagamento}
+                      </Badge>
+                    </div>
                   </div>
-                  <Badge
-                    variant={pedido.statusEntrega === "Em rota" ? "default" : "outline"}
-                    className="shrink-0 text-xs"
-                  >
-                    {pedido.statusEntrega}
-                  </Badge>
-                </div>
 
-                {/* Total and payment */}
-                <div className="flex items-center justify-between">
-                  <span className="text-xl font-bold">{fmt(pedido.total)}</span>
-                  <Badge
-                    variant={pedido.situacaoPagamento === "Pago" ? "default" : "outline"}
-                    className="text-xs"
-                  >
-                    {pedido.situacaoPagamento}
-                  </Badge>
-                </div>
+                  {/* Expanded */}
+                  {expandedId === item.data.id && (
+                    <div className="mt-3 pt-3 border-t border-border space-y-3" onClick={(e) => e.stopPropagation()}>
+                      {/* Items */}
+                      {item.data.itens.length > 0 && (
+                        <div className="space-y-1">
+                          {item.data.itens.map((it) => (
+                            <div key={it.id} className="flex justify-between text-sm">
+                              <span>{it.quantidade}x {it.produto.nome}</span>
+                              <span className="text-muted-foreground">{fmt(it.subtotal)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
-                {/* Action buttons */}
-                <div className="flex gap-2">
-                  <Button
-                    className="flex-1 min-h-[48px] bg-green-600 hover:bg-green-700 text-white"
-                    onClick={() => marcarEntregue(pedido)}
-                    disabled={actionLoading === pedido.id || pedido.statusEntrega === "Entregue"}
-                  >
-                    {actionLoading === pedido.id ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <Check className="size-4" />
-                    )}
-                    Entregue
-                  </Button>
-                  <Button
-                    className="flex-1 min-h-[48px] bg-blue-600 hover:bg-blue-700 text-white"
-                    onClick={() => registrarPagamento(pedido)}
-                    disabled={actionLoading === pedido.id || pedido.situacaoPagamento === "Pago"}
-                  >
-                    {actionLoading === pedido.id ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : (
-                      <CreditCard className="size-4" />
-                    )}
-                    Recebeu Pgto
-                  </Button>
-                </div>
+                      {/* Actions */}
+                      <div className="flex gap-2">
+                        <Button
+                          className="flex-1 min-h-[44px] bg-green-600 hover:bg-green-700 text-white"
+                          onClick={() => marcarEntregue(item.data)}
+                          disabled={actionLoading === item.data.id || item.data.statusEntrega === "Entregue"}
+                        >
+                          {actionLoading === item.data.id ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                          Entregue
+                        </Button>
+                        <Button
+                          className="flex-1 min-h-[44px] bg-blue-600 hover:bg-blue-700 text-white"
+                          onClick={() => registrarPagamento(item.data)}
+                          disabled={actionLoading === item.data.id || item.data.situacaoPagamento === "Pago"}
+                        >
+                          {actionLoading === item.data.id ? <Loader2 className="size-4 animate-spin" /> : <CreditCard className="size-4" />}
+                          Recebeu Pgto
+                        </Button>
+                      </div>
 
-                {/* Maps button */}
-                <Button
-                  variant="outline"
-                  className="w-full min-h-[48px]"
-                  onClick={() => abrirMaps(pedido.cliente)}
-                >
-                  <Navigation className="size-4" />
-                  Abrir no Google Maps
-                </Button>
-              </CardContent>
-            </Card>
-          ))
+                      <Button variant="outline" className="w-full min-h-[44px]" onClick={() => abrirMaps(item.data.cliente)}>
+                        <Navigation className="size-4" />
+                        Abrir no Google Maps
+                      </Button>
+
+                      {item.data.cliente.telefone && mensagensWpp.length > 0 && (
+                        <div>
+                          <Button
+                            variant="outline"
+                            className="w-full min-h-[44px] border-green-600/40 text-green-400 hover:bg-green-600/10"
+                            onClick={() => setWppPickerId(wppPickerId === item.data.id ? null : item.data.id)}
+                          >
+                            <MessageCircle className="size-4" />
+                            Enviar WhatsApp
+                          </Button>
+                          {wppPickerId === item.data.id && (
+                            <div className="mt-2 rounded-lg border border-border bg-muted/30 p-2 space-y-1">
+                              {mensagensWpp.map((m) => {
+                                const preview = applyVars(m.texto, { nome: item.data.cliente.nome, total: fmt(item.data.total) });
+                                return (
+                                  <button
+                                    key={m.id}
+                                    onClick={() => {
+                                      window.open(buildWppUrl(item.data.cliente.telefone, preview), "_blank");
+                                      setWppPickerId(null);
+                                    }}
+                                    className="w-full text-left px-3 py-2 rounded-md hover:bg-muted transition-colors"
+                                  >
+                                    <p className="text-sm font-medium">{m.nome}</p>
+                                    <p className="text-xs text-muted-foreground truncate">{preview}</p>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          )
         )}
       </div>
 
-      {/* Finish route button - fixed at bottom */}
+      {/* Finish route button */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-background border-t">
-        <Button
-          className="w-full min-h-[48px] bg-primary hover:bg-primary/90"
-          onClick={finalizarRota}
-        >
+        <Button className="w-full min-h-[48px] bg-primary hover:bg-primary/90" onClick={finalizarRota}>
           Finalizar Rota
         </Button>
       </div>
@@ -314,7 +426,6 @@ export default function EntregaPage() {
                 <X className="size-5" />
               </Button>
             </div>
-
             <div className="space-y-3">
               <div className="flex items-center justify-between py-2 border-b">
                 <span className="text-muted-foreground">Entregas realizadas</span>
@@ -329,11 +440,7 @@ export default function EntregaPage() {
                 <span className="text-lg font-bold text-yellow-500">{pgtosPendentes}</span>
               </div>
             </div>
-
-            <Button
-              className="w-full min-h-[48px]"
-              onClick={() => router.push("/")}
-            >
+            <Button className="w-full min-h-[48px]" onClick={() => router.push("/")}>
               Voltar ao Inicio
             </Button>
           </div>

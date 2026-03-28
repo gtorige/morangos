@@ -27,6 +27,8 @@ import {
   Settings,
   Home,
   Save,
+  ChevronDown,
+  MessageCircle,
 } from "lucide-react";
 
 interface Cliente {
@@ -40,6 +42,14 @@ interface Cliente {
   enderecoAlternativo?: string;
 }
 
+interface PedidoItem {
+  id: number;
+  quantidade: number;
+  precoUnitario: number;
+  subtotal: number;
+  produto: { id: number; nome: string };
+}
+
 interface Pedido {
   id: number;
   clienteId: number;
@@ -48,6 +58,7 @@ interface Pedido {
   statusEntrega: string;
   situacaoPagamento: string;
   cliente: Cliente;
+  itens: PedidoItem[];
 }
 
 interface RotaInfo {
@@ -57,6 +68,12 @@ interface RotaInfo {
   deliveryDurationMinutes: number;
   returnDurationMinutes: number;
   mapUrl: string;
+}
+
+interface MensagemWhatsApp {
+  id: number;
+  nome: string;
+  texto: string;
 }
 
 interface LocalFrequente {
@@ -80,6 +97,32 @@ function fmt(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function buildWppUrl(telefone: string, texto: string) {
+  const num = telefone.replace(/\D/g, "");
+  const full = num.startsWith("55") ? num : `55${num}`;
+  return `https://wa.me/${full}?text=${encodeURIComponent(texto)}`;
+}
+
+function applyVars(texto: string, vars: Record<string, string>) {
+  // Normalize various unicode curly brace chars + strip zero-width chars
+  let result = texto
+    .replace(/[\u200B\u200C\u200D\uFEFF]/g, "") // zero-width chars
+    .replace(/[\uFF5B\u2774\u2775\u007B]/g, "{") // → {
+    .replace(/[\uFF5D\u2776\u2777\u007D]/g, "}"); // → }
+  for (const [key, value] of Object.entries(vars)) {
+    result = result.replace(new RegExp(`\\{\\s*${key}\\s*\\}`, "gi"), value ?? "");
+  }
+  return result;
+}
+
+function fmtMin(min: number) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h === 0) return `${m}min`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}min`;
+}
+
 function todayString() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -101,6 +144,12 @@ function buildDisplayAddress(cliente: Cliente) {
   return [street, cliente.bairro].filter(Boolean).join(" – ");
 }
 
+const ROTA_STORAGE_KEY = "rota-lista";
+
+function saveListaToStorage(lista: ListItem[]) {
+  try { localStorage.setItem(ROTA_STORAGE_KEY, JSON.stringify(lista)); } catch {}
+}
+
 function buildListaOrdenada(pedidos: Pedido[], paradas: Parada[]): ListItem[] {
   return [
     ...pedidos.map((p) => ({ type: "pedido" as const, data: p })),
@@ -117,6 +166,10 @@ export default function RotaPage() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
   const [rotaInfo, setRotaInfo] = useState<RotaInfo | null>(null);
+  const [showMap, setShowMap] = useState(false);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [mensagensWpp, setMensagensWpp] = useState<MensagemWhatsApp[]>([]);
+  const [wppPickerId, setWppPickerId] = useState<number | null>(null);
 
   const [enderecoSalvo, setEnderecoSalvo] = useState("");
 
@@ -131,6 +184,7 @@ export default function RotaPage() {
   useEffect(() => {
     fetchEnderecoPartida();
     fetchLocaisFrequentes();
+    fetch("/api/mensagens-whatsapp").then(r => r.ok ? r.json() : []).then(setMensagensWpp).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -314,6 +368,7 @@ export default function RotaPage() {
         .filter(Boolean) as ListItem[];
 
       setListaOrdenada(novaLista);
+      saveListaToStorage(novaLista);
 
       // Update pedidos order too (for compatibility with actions)
       const reorderedPedidos = (optimizedOrder as number[])
@@ -335,6 +390,7 @@ export default function RotaPage() {
       }
 
       setRotaInfo({ totalDistanceKm, totalDurationMinutes, deliveryDistanceKm, deliveryDurationMinutes, returnDurationMinutes, mapUrl });
+      if (mapUrl) setShowMap(true);
     } catch (error) {
       console.error("Erro ao otimizar rota:", error);
       alert("Erro de conexão ao otimizar rota.");
@@ -378,6 +434,7 @@ export default function RotaPage() {
   async function iniciarEntregas() {
     try {
       setBulkLoading(true);
+      saveListaToStorage(listaOrdenada);
       await Promise.all(
         pedidos.map((p) =>
           fetch(`/api/pedidos/${p.id}`, {
@@ -448,134 +505,6 @@ export default function RotaPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Rota de Entrega</h1>
       </div>
 
-      {/* Paradas Adicionais */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center justify-between text-sm font-medium">
-            <div className="flex items-center gap-2">
-              <Star className="size-4" />
-              Paradas Adicionais
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowGerenciarLocais(!showGerenciarLocais)}
-            >
-              <Settings className="size-4" />
-              Gerenciar Locais
-            </Button>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {/* Add parada from locais frequentes */}
-          <div className="flex gap-2">
-            <select
-              className="flex h-8 flex-1 items-center rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-              value={selectedLocalId}
-              onChange={(e) => setSelectedLocalId(e.target.value)}
-            >
-              <option value="">Selecione um local frequente...</option>
-              {locaisFrequentes
-                .filter((l) => !paradas.some((p) => p.id === l.id))
-                .map((l) => (
-                  <option key={l.id} value={String(l.id)}>
-                    {l.nome} — {l.endereco}
-                  </option>
-                ))}
-            </select>
-            <Button size="sm" onClick={adicionarParada} disabled={!selectedLocalId} className="h-8">
-              <Plus className="size-4" />
-              Adicionar
-            </Button>
-          </div>
-
-          {/* Added paradas */}
-          {paradas.length > 0 && (
-            <div className="space-y-1.5">
-              {paradas.map((parada) => (
-                <div
-                  key={parada.id}
-                  className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-1.5"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{parada.nome}</p>
-                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                      <MapPin className="size-3 shrink-0" />
-                      {parada.endereco}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => removerParada(parada.id)}
-                  >
-                    <X className="size-4 text-destructive" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Gerenciar Locais Frequentes */}
-          {showGerenciarLocais && (
-            <div className="space-y-3 border-t border-border pt-3">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Gerenciar Locais Frequentes
-              </p>
-
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Input
-                  placeholder="Nome do local"
-                  value={novoLocalNome}
-                  onChange={(e) => setNovoLocalNome(e.target.value)}
-                  className="h-8 text-sm"
-                />
-                <Input
-                  placeholder="Endereço completo"
-                  value={novoLocalEndereco}
-                  onChange={(e) => setNovoLocalEndereco(e.target.value)}
-                  className="h-8 text-sm"
-                />
-                <Button
-                  size="sm"
-                  onClick={criarLocalFrequente}
-                  disabled={savingLocal || !novoLocalNome.trim()}
-                  className="h-8 shrink-0"
-                >
-                  <Plus className="size-4" />
-                  {savingLocal ? "Salvando..." : "Criar"}
-                </Button>
-              </div>
-
-              {locaisFrequentes.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Nenhum local frequente cadastrado.</p>
-              ) : (
-                <div className="space-y-1">
-                  {locaisFrequentes.map((local) => (
-                    <div
-                      key={local.id}
-                      className="flex items-center justify-between rounded-lg px-3 py-1.5 hover:bg-muted/50"
-                    >
-                      <div className="min-w-0">
-                        <span className="text-sm">{local.nome}</span>
-                        <span className="text-xs text-muted-foreground ml-2">{local.endereco}</span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => excluirLocalFrequente(local.id)}
-                      >
-                        <Trash2 className="size-4 text-destructive" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Data */}
       <div className="space-y-1">
         <Label htmlFor="data" className="text-xs">Data</Label>
@@ -615,47 +544,136 @@ export default function RotaPage() {
         </div>
       )}
 
-      {/* Route info */}
+      {/* Route info + mapa colapsável */}
       {rotaInfo && (
-        <Card className="border-primary/30 bg-primary/5">
-          <CardContent className="py-3">
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
-              <div className="flex items-center gap-2">
-                <Route className="size-4 text-primary" />
-                <span>Entregas: <strong>{rotaInfo.deliveryDistanceKm} km</strong> · <strong>{rotaInfo.deliveryDurationMinutes} min</strong></span>
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Home className="size-3.5" />
-                <span>Volta: +{rotaInfo.returnDurationMinutes} min</span>
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Clock className="size-3.5" />
-                <span>Total: {rotaInfo.totalDistanceKm} km · {rotaInfo.totalDurationMinutes} min</span>
-              </div>
-              <Badge variant="outline" className="text-primary border-primary/30">
-                Com trânsito
-              </Badge>
+        <div className="rounded-lg border border-primary/20 bg-primary/5 overflow-hidden">
+          <button
+            onClick={() => rotaInfo.mapUrl && setShowMap(!showMap)}
+            className={`w-full flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-sm text-left ${rotaInfo.mapUrl ? "cursor-pointer hover:bg-primary/10 transition-colors" : "cursor-default"}`}
+          >
+            <div className="flex items-center gap-1.5">
+              <Route className="size-3.5 text-primary" />
+              <span className="font-medium">{rotaInfo.deliveryDistanceKm} km</span>
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Map preview */}
-      {rotaInfo?.mapUrl && (
-        <Card>
-          <CardContent className="p-0 overflow-hidden rounded-xl">
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <Clock className="size-3.5" />
+              <span>{fmtMin(rotaInfo.totalDurationMinutes)}</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <Home className="size-3.5" />
+              <span>volta +{fmtMin(rotaInfo.returnDurationMinutes)}</span>
+            </div>
+            {rotaInfo.mapUrl && (
+              <ChevronDown className={`size-3.5 text-muted-foreground ml-auto transition-transform ${showMap ? "rotate-180" : ""}`} />
+            )}
+          </button>
+          {showMap && rotaInfo.mapUrl && (
             <iframe
               src={rotaInfo.mapUrl}
-              className="w-full h-[250px] sm:h-[400px] border-0"
+              className="w-full h-[250px] sm:h-[400px] border-0 border-t border-primary/20"
               allowFullScreen
               loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"
             />
-          </CardContent>
-        </Card>
+          )}
+        </div>
       )}
 
       <Separator />
+
+      {/* Paradas Adicionais */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+            <Star className="size-3.5" />
+            Paradas Adicionais
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-xs px-2 text-muted-foreground"
+            onClick={() => setShowGerenciarLocais(!showGerenciarLocais)}
+          >
+            <Settings className="size-3" />
+            Gerenciar Locais
+          </Button>
+        </div>
+
+        <div className="flex gap-2">
+          <select
+            className="flex h-8 flex-1 items-center rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+            value={selectedLocalId}
+            onChange={(e) => setSelectedLocalId(e.target.value)}
+          >
+            <option value="">Selecione um local para adicionar...</option>
+            {locaisFrequentes
+              .filter((l) => !paradas.some((p) => p.id === l.id))
+              .map((l) => (
+                <option key={l.id} value={String(l.id)}>
+                  {l.nome} — {l.endereco}
+                </option>
+              ))}
+          </select>
+          <Button size="sm" onClick={adicionarParada} disabled={!selectedLocalId} className="h-8 shrink-0">
+            <Plus className="size-4" />
+            Adicionar
+          </Button>
+        </div>
+
+        {/* Gerenciar Locais Frequentes */}
+        {showGerenciarLocais && (
+          <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Input
+                placeholder="Nome do local"
+                value={novoLocalNome}
+                onChange={(e) => setNovoLocalNome(e.target.value)}
+                className="h-8 text-sm"
+              />
+              <Input
+                placeholder="Endereço completo"
+                value={novoLocalEndereco}
+                onChange={(e) => setNovoLocalEndereco(e.target.value)}
+                className="h-8 text-sm"
+              />
+              <Button
+                size="sm"
+                onClick={criarLocalFrequente}
+                disabled={savingLocal || !novoLocalNome.trim()}
+                className="h-8 shrink-0"
+              >
+                <Plus className="size-4" />
+                {savingLocal ? "Salvando..." : "Criar"}
+              </Button>
+            </div>
+
+            {locaisFrequentes.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Nenhum local frequente cadastrado.</p>
+            ) : (
+              <div className="space-y-1">
+                {locaisFrequentes.map((local) => (
+                  <div
+                    key={local.id}
+                    className="flex items-center justify-between rounded-lg px-2 py-1 hover:bg-muted/50"
+                  >
+                    <div className="min-w-0">
+                      <span className="text-sm">{local.nome}</span>
+                      <span className="text-xs text-muted-foreground ml-2">{local.endereco}</span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => excluirLocalFrequente(local.id)}
+                    >
+                      <Trash2 className="size-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {loading ? (
         <p className="text-center text-muted-foreground py-8">Carregando...</p>
@@ -673,75 +691,80 @@ export default function RotaPage() {
           {listaOrdenada.map((item, index) =>
             item.type === "pedido" ? (
               /* Pedido card */
-              <Card key={`pedido-${item.data.id}`}>
-                <CardContent className="py-2 px-3">
+              <Card key={`pedido-${item.data.id}`} className="cursor-pointer" onClick={() => setExpandedId(expandedId === item.data.id ? null : item.data.id)}>
+                <CardContent className="py-1.5 px-3">
                   <div className="flex items-center gap-2">
-                    {/* Position number */}
                     <span className="flex items-center justify-center size-6 rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">
                       {index + 1}
                     </span>
-
-                    {/* Content */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="font-medium text-sm leading-tight truncate">{item.data.cliente.nome}</p>
-                          <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                            <MapPin className="size-3 shrink-0" />
-                            {buildDisplayAddress(item.data.cliente)}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-0.5 shrink-0">
-                          <Badge
-                            variant={item.data.statusEntrega === "Em rota" ? "default" : "outline"}
-                            className="text-xs hidden sm:flex"
-                          >
-                            {item.data.statusEntrega}
-                          </Badge>
-                          <Button variant="ghost" size="icon-sm" onClick={() => moveUp(index)} disabled={index === 0}>
-                            <ArrowUp className="size-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="icon-sm" onClick={() => moveDown(index)} disabled={index === listaOrdenada.length - 1}>
-                            <ArrowDown className="size-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between mt-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold">{fmt(item.data.total)}</span>
-                          <Badge
-                            variant={item.data.situacaoPagamento === "Pago" ? "default" : "outline"}
-                            className="text-xs"
-                          >
-                            {item.data.situacaoPagamento}
-                          </Badge>
-                        </div>
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => marcarEntregue(item.data)}
-                            disabled={actionLoading === item.data.id || item.data.statusEntrega === "Entregue"}
-                            className="h-6 text-xs px-2"
-                          >
-                            <Check className="size-3" />
-                            Entregue
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => registrarPagamento(item.data)}
-                            disabled={actionLoading === item.data.id || item.data.situacaoPagamento === "Pago"}
-                            className="h-6 text-xs px-2"
-                          >
-                            <CreditCard className="size-3" />
-                            Pagar
-                          </Button>
-                        </div>
-                      </div>
+                      <p className="font-medium text-sm leading-tight truncate">{item.data.cliente.nome}</p>
+                      <p className="text-xs text-muted-foreground truncate">{buildDisplayAddress(item.data.cliente)}</p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-sm font-bold">{fmt(item.data.total)}</span>
+                      <Badge variant={item.data.situacaoPagamento === "Pago" ? "default" : "outline"} className="text-xs hidden sm:flex">
+                        {item.data.situacaoPagamento}
+                      </Badge>
+                      <Button variant="ghost" size="icon-sm" onClick={(e) => { e.stopPropagation(); moveUp(index); }} disabled={index === 0}>
+                        <ArrowUp className="size-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon-sm" onClick={(e) => { e.stopPropagation(); moveDown(index); }} disabled={index === listaOrdenada.length - 1}>
+                        <ArrowDown className="size-3.5" />
+                      </Button>
                     </div>
                   </div>
+
+                  {expandedId === item.data.id && (
+                    <div className="mt-2 pt-2 border-t border-border space-y-2">
+                      {item.data.itens.length > 0 && (
+                        <div className="space-y-0.5">
+                          {item.data.itens.map((it) => (
+                            <div key={it.id} className="flex justify-between text-xs">
+                              <span>{it.quantidade}x {it.produto.nome}</span>
+                              <span className="text-muted-foreground">{fmt(it.subtotal)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                        <Button size="sm" variant="outline" onClick={() => marcarEntregue(item.data)} disabled={actionLoading === item.data.id || item.data.statusEntrega === "Entregue"} className="h-6 text-xs px-2 flex-1">
+                          <Check className="size-3" />
+                          Entregue
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => registrarPagamento(item.data)} disabled={actionLoading === item.data.id || item.data.situacaoPagamento === "Pago"} className="h-6 text-xs px-2 flex-1">
+                          <CreditCard className="size-3" />
+                          Pagar
+                        </Button>
+                        {item.data.cliente.telefone && mensagensWpp.length > 0 && (
+                          <Button size="sm" variant="outline" onClick={() => setWppPickerId(wppPickerId === item.data.id ? null : item.data.id)} className="h-6 text-xs px-2">
+                            <MessageCircle className="size-3 text-green-500" />
+                          </Button>
+                        )}
+                      </div>
+                      {wppPickerId === item.data.id && (
+                        <div className="rounded-lg border border-border bg-muted/30 p-2 space-y-1" onClick={(e) => e.stopPropagation()}>
+                          <p className="text-xs text-muted-foreground font-medium">Enviar mensagem:</p>
+                          {mensagensWpp.map((m) => {
+                            const preview = applyVars(m.texto, { nome: item.data.cliente.nome, total: fmt(item.data.total) });
+                            return (
+                              <button
+                                key={m.id}
+                                onClick={() => {
+                                  window.open(buildWppUrl(item.data.cliente.telefone, preview), "_blank");
+                                  setWppPickerId(null);
+                                }}
+                                className="w-full text-left px-2 py-1.5 rounded-md hover:bg-muted transition-colors"
+                              >
+                                <p className="text-xs font-medium">{m.nome}</p>
+                                <p className="text-xs text-muted-foreground truncate">{preview}</p>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ) : (

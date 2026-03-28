@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -170,8 +170,9 @@ function getSunday(monday: Date) {
 
 function dateToStr(d: Date) { return d.toISOString().slice(0, 10); }
 
-export default function PedidosPage() {
+function PedidosPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [allPedidos, setAllPedidos] = useState<Pedido[]>([]); // unfiltered for dropdown options
   const [loading, setLoading] = useState(true);
@@ -211,6 +212,15 @@ export default function PedidosPage() {
   // Inline cell editing state
   const [editingDateId, setEditingDateId] = useState<number | null>(null);
   const [editingDateValue, setEditingDateValue] = useState("");
+
+  // Apply URL params (e.g. from notification banner)
+  useEffect(() => {
+    const urlSituacao = searchParams.get("situacaoPagamento");
+    if (urlSituacao) {
+      setFilters({ ...defaultFilters, situacaoPagamento: urlSituacao, dataInicio: "", dataFim: "", statusEntrega: ["Entregue"], clientes: [], bairros: [] });
+      setTab("pendente_pgto");
+    }
+  }, [searchParams]);
 
   // Drawer state
   const [drawerPedidoId, setDrawerPedidoId] = useState<number | null>(null);
@@ -1931,5 +1941,13 @@ export default function PedidosPage() {
         ) : null}
       </div>
     </div>
+  );
+}
+
+export default function PedidosPage() {
+  return (
+    <Suspense>
+      <PedidosPageInner />
+    </Suspense>
   );
 }

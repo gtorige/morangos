@@ -111,7 +111,8 @@ export default function EditarPedidoPage() {
   const [statusEntrega, setStatusEntrega] = useState("Pendente");
   const [ordemRota, setOrdemRota] = useState("");
   const [itens, setItens] = useState<ItemPedido[]>([]);
-  const [taxaEntrega, setTaxaEntrega] = useState(5.0);
+  const [taxaEntregaAtiva, setTaxaEntregaAtiva] = useState(false);
+  const [taxaEntregaValor, setTaxaEntregaValor] = useState(5.0);
 
   // Product autocomplete state per item
   const [produtoSearches, setProdutoSearches] = useState<Record<number, string>>({});
@@ -204,7 +205,9 @@ export default function EditarPedidoPage() {
       setSituacaoPagamento(pedido.situacaoPagamento || "Pendente");
       setStatusEntrega(pedido.statusEntrega || "Pendente");
       setOrdemRota(pedido.ordemRota != null ? String(pedido.ordemRota) : "");
-      setTaxaEntrega(pedido.taxaEntrega ?? 5.0);
+      const taxa = pedido.taxaEntrega ?? 0;
+      setTaxaEntregaAtiva(taxa > 0);
+      setTaxaEntregaValor(taxa > 0 ? taxa : 5.0);
       const mappedItens = pedido.itens.map((item) => ({
         produtoId: String(item.produtoId),
         quantidade: String(item.quantidade),
@@ -366,6 +369,7 @@ export default function EditarPedidoPage() {
     const { subtotal } = calcSubtotal(item);
     return acc + subtotal;
   }, 0);
+  const taxaEntrega = taxaEntregaAtiva ? taxaEntregaValor : 0;
   const total = subtotalItens + taxaEntrega;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -787,21 +791,31 @@ export default function EditarPedidoPage() {
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="taxaEntrega" className="text-sm">Taxa de Entrega</Label>
-                      <Input
-                        id="taxaEntrega"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={taxaEntrega}
-                        onChange={(e) => setTaxaEntrega(parseFloat(e.target.value) || 0)}
-                        className="w-28"
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={taxaEntregaAtiva}
+                        onChange={(e) => setTaxaEntregaAtiva(e.target.checked)}
+                        className="size-4 accent-primary cursor-pointer"
                       />
-                    </div>
-                    <span className="text-sm text-muted-foreground">
-                      {formatPrice(taxaEntrega)}
-                    </span>
+                      <span className="text-sm">Taxa de Entrega</span>
+                    </label>
+                    {taxaEntregaAtiva && (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id="taxaEntrega"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={taxaEntregaValor}
+                          onChange={(e) => setTaxaEntregaValor(parseFloat(e.target.value) || 0)}
+                          className="w-24"
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          {formatPrice(taxaEntregaValor)}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex justify-end text-lg font-semibold">

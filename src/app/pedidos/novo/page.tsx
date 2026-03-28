@@ -79,7 +79,8 @@ export default function NovoPedidoPage() {
   const [formaPagamentoId, setFormaPagamentoId] = useState("");
   const [observacoes, setObservações] = useState("");
   const [itens, setItens] = useState<ItemPedido[]>([]);
-  const [taxaEntrega, setTaxaEntrega] = useState(5.0);
+  const [taxaEntregaAtiva, setTaxaEntregaAtiva] = useState(false);
+  const [taxaEntregaValor, setTaxaEntregaValor] = useState(5.0);
 
   // Último pedido (favorites)
   interface UltimoPedido {
@@ -342,6 +343,7 @@ export default function NovoPedidoPage() {
     const { subtotal } = calcSubtotal(item);
     return acc + subtotal;
   }, 0);
+  const taxaEntrega = taxaEntregaAtiva ? taxaEntregaValor : 0;
   const total = subtotalItens + taxaEntrega;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -781,21 +783,31 @@ export default function NovoPedidoPage() {
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="taxaEntrega" className="text-sm">Taxa de Entrega</Label>
-                      <Input
-                        id="taxaEntrega"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={taxaEntrega}
-                        onChange={(e) => setTaxaEntrega(parseFloat(e.target.value) || 0)}
-                        className="w-20"
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={taxaEntregaAtiva}
+                        onChange={(e) => setTaxaEntregaAtiva(e.target.checked)}
+                        className="size-4 accent-primary cursor-pointer"
                       />
-                    </div>
-                    <span className="text-sm text-muted-foreground">
-                      {formatPrice(taxaEntrega)}
-                    </span>
+                      <span className="text-sm">Taxa de Entrega</span>
+                    </label>
+                    {taxaEntregaAtiva && (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id="taxaEntrega"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={taxaEntregaValor}
+                          onChange={(e) => setTaxaEntregaValor(parseFloat(e.target.value) || 0)}
+                          className="w-20"
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          {formatPrice(taxaEntregaValor)}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex justify-end text-lg font-semibold">
