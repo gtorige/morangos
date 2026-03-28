@@ -165,10 +165,22 @@ export default function RotaPage() {
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        console.error("Erro na otimização:", err);
+        const err = await res.json().catch(() => ({}));
+        console.error("Erro na otimização:", JSON.stringify(err));
+        const errorMsg = err.error || "";
         const details = err.details?.error?.message || "";
-        if (details.includes("could not be geocoded") || details.includes("GEOCODING")) {
+
+        if (errorMsg.includes("não configurada") || errorMsg.includes("not configured")) {
+          alert(
+            "API Key do Google não configurada.\n\n" +
+            "Vá em Configurações (menu lateral) e adicione sua Google Routes API Key."
+          );
+        } else if (errorMsg.includes("permissão") || errorMsg.includes("PERMISSION_DENIED") || details.includes("PERMISSION_DENIED")) {
+          alert(
+            "API Key sem permissão.\n\n" +
+            "Verifique se a Routes API está ativada no Google Cloud Console."
+          );
+        } else if (details.includes("could not be geocoded") || details.includes("GEOCODING")) {
           const badAddresses = waypoints
             .filter((w) => !w.address || w.address.trim().length < 5)
             .map((w) => `• Pedido ${w.pedidoId}`);
@@ -181,7 +193,7 @@ export default function RotaPage() {
         } else {
           alert(
             "Erro ao otimizar rota.\n\n" +
-            (details || "Verifique os endereços dos clientes e tente novamente.")
+            (errorMsg || details || "Verifique os endereços dos clientes e tente novamente.")
           );
         }
         return;
