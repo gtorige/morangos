@@ -940,7 +940,7 @@ function PedidosPageInner() {
 
   const totals = useMemo(() => {
     const total = filteredByTab.reduce((sum, p) => sum + p.total, 0);
-    const recebido = filteredByTab.filter(p => p.situacaoPagamento === "Pago").reduce((sum, p) => sum + p.valorPago, 0);
+    const recebido = filteredByTab.filter(p => p.situacaoPagamento === "Pago").reduce((sum, p) => sum + p.total, 0);
     return { count: filteredByTab.length, total, recebido, pendente: total - recebido };
   }, [filteredByTab]);
 

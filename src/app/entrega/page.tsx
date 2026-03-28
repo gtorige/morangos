@@ -230,7 +230,7 @@ export default function EntregaPage() {
       const res = await fetch(`/api/pedidos?dataEntrega=${todayString()}`);
       const todos: Pedido[] = await res.json();
       const entregues = todos.filter((p) => p.statusEntrega === "Entregue");
-      const recebido = todos.filter((p) => p.situacaoPagamento === "Pago").reduce((sum, p) => sum + p.valorPago, 0);
+      const recebido = todos.filter((p) => p.situacaoPagamento === "Pago").reduce((sum, p) => sum + p.total, 0);
       const pendentes = todos.filter((p) => p.statusEntrega === "Entregue" && p.situacaoPagamento === "Pendente").length;
       setEntregasRealizadas(entregues.length);
       setTotalRecebido(recebido);
