@@ -15,7 +15,6 @@ export default function LoginPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    setNeedsSetup(false);
 
     if (!username.trim() || !senha) {
       setError("Preencha usuário e senha.");
