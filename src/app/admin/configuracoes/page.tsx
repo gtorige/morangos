@@ -29,6 +29,7 @@ export default function ConfiguracoesPage() {
   const [testingRoutes, setTestingRoutes] = useState(false);
   const [testingEmbed, setTestingEmbed] = useState(false);
   const [routesStatus, setRoutesStatus] = useState<"ok" | "error" | null>(null);
+  const [routesError, setRoutesError] = useState("");
   const [embedStatus, setEmbedStatus] = useState<"ok" | "error" | null>(null);
 
   useEffect(() => {
@@ -83,6 +84,7 @@ export default function ConfiguracoesPage() {
   async function testRoutesApi() {
     setTestingRoutes(true);
     setRoutesStatus(null);
+    setRoutesError("");
     try {
       const res = await fetch("/api/rota/otimizar", {
         method: "POST",
@@ -92,9 +94,18 @@ export default function ConfiguracoesPage() {
           waypoints: [{ address: "Rua Augusta, 500, Sao Paulo", pedidoId: 0 }],
         }),
       });
-      setRoutesStatus(res.ok ? "ok" : "error");
-    } catch {
+      if (res.ok) {
+        setRoutesStatus("ok");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.error("Routes API test error:", err);
+        setRoutesStatus("error");
+        setRoutesError(err.error || err.details?.error?.message || `HTTP ${res.status}`);
+      }
+    } catch (e) {
+      console.error("Routes API test exception:", e);
       setRoutesStatus("error");
+      setRoutesError("Erro de conexão");
     } finally {
       setTestingRoutes(false);
     }
@@ -155,9 +166,12 @@ export default function ConfiguracoesPage() {
                   </Badge>
                 )}
                 {routesStatus === "error" && (
-                  <Badge className="bg-red-600 text-white gap-1">
-                    <AlertCircle className="size-3" /> Erro
-                  </Badge>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge className="bg-red-600 text-white gap-1">
+                      <AlertCircle className="size-3" /> Erro
+                    </Badge>
+                    {routesError && <span className="text-xs text-red-400 max-w-[300px] text-right">{routesError}</span>}
+                  </div>
                 )}
               </div>
             </div>
