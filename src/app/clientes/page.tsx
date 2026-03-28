@@ -175,6 +175,7 @@ export default function ClientesPage() {
       setLoading(true);
       const params = busca ? `?busca=${encodeURIComponent(busca)}` : "";
       const res = await fetch(`/api/clientes${params}`);
+      if (!res.ok) return;
       const data = await res.json();
       setClientes(data);
     } catch (error) {

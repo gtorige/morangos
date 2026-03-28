@@ -68,10 +68,10 @@ export default function RecorrentesPage() {
         fetch("/api/recorrentes"), fetch("/api/clientes"),
         fetch("/api/produtos"), fetch("/api/formas-pagamento"),
       ]);
-      setRecorrentes(await recRes.json());
-      setClientes(await cliRes.json());
-      setProdutos(await prodRes.json());
-      setFormasPag(await fpRes.json());
+      if (recRes.ok) setRecorrentes(await recRes.json());
+      if (cliRes.ok) setClientes(await cliRes.json());
+      if (prodRes.ok) setProdutos(await prodRes.json());
+      if (fpRes.ok) setFormasPag(await fpRes.json());
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }

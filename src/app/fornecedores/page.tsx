@@ -39,6 +39,7 @@ export default function FornecedoresPage() {
   async function fetchItems() {
     try {
       const res = await fetch("/api/fornecedores");
+      if (!res.ok) return;
       const data = await res.json();
       setItems(data);
     } catch (err) {

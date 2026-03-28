@@ -210,6 +210,7 @@ export default function ContasPage() {
     try {
       setContasLoading(true);
       const res = await fetch("/api/contas");
+      if (!res.ok) return;
       setContas(await res.json());
     } catch (e) {
       console.error("Erro ao buscar contas:", e);
@@ -330,6 +331,7 @@ export default function ContasPage() {
     try {
       setFornecedoresLoading(true);
       const res = await fetch("/api/fornecedores");
+      if (!res.ok) return;
       setFornecedores(await res.json());
     } catch (e) {
       console.error("Erro ao buscar fornecedores:", e);
@@ -392,6 +394,7 @@ export default function ContasPage() {
   async function fetchSubcategorias() {
     try {
       const res = await fetch("/api/subcategorias");
+      if (!res.ok) return;
       const data = await res.json();
       setSubcategorias(Array.isArray(data) ? data : []);
     } catch (e) {
@@ -450,6 +453,7 @@ export default function ContasPage() {
     try {
       setCategoriasLoading(true);
       const res = await fetch("/api/categorias");
+      if (!res.ok) return;
       setCategorias(await res.json());
     } catch (e) {
       console.error("Erro ao buscar categorias:", e);

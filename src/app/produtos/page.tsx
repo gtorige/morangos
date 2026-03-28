@@ -51,6 +51,7 @@ export default function ProdutosPage() {
     try {
       setLoading(true);
       const res = await fetch("/api/produtos");
+      if (!res.ok) return;
       const data = await res.json();
       setProdutos(data);
     } catch (error) {

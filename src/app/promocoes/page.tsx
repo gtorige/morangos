@@ -113,6 +113,7 @@ export default function PromocoesPage() {
   async function fetchItems() {
     try {
       const res = await fetch("/api/promocoes");
+      if (!res.ok) return;
       const data = await res.json();
       setItems(data);
     } catch (error) {
@@ -125,6 +126,7 @@ export default function PromocoesPage() {
   async function fetchProdutos() {
     try {
       const res = await fetch("/api/produtos");
+      if (!res.ok) return;
       const data = await res.json();
       setProdutos(data);
     } catch (error) {
