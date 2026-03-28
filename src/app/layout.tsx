@@ -61,7 +61,7 @@ const navItems = [
   { href: "/clientes", label: "Clientes", icon: Users },
   { href: "/produtos", label: "Produtos", icon: Package },
   { href: "/promocoes", label: "Promoções", icon: Tag },
-  { href: "/contas", label: "Fornecedores", icon: Receipt },
+  { href: "/contas", label: "Financeiro", icon: Receipt },
   { href: "/rota", label: "Rota de Entrega", icon: MapPin },
   { href: "/entrega", label: "Modo Entrega", icon: Truck },
   { href: "/separacao", label: "Separação", icon: ClipboardCheck },

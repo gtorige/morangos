@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Pencil, Trash2, Package } from "lucide-react";
+import { Plus, Pencil, Trash2, Package, Download } from "lucide-react";
 
 interface Produto {
   id: number;
@@ -158,6 +158,15 @@ export default function ProdutosPage() {
     });
   }
 
+  function exportCSV() {
+    const csv = ["Nome;Preço", ...produtos.map(p => `"${p.nome}";${p.preco.toFixed(2).replace(".", ",")}`).join('\n')];
+    const blob = new Blob(['\uFEFF' + csv.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'produtos.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -166,8 +175,13 @@ export default function ProdutosPage() {
           <h1 className="text-2xl font-semibold">Produtos</h1>
         </div>
 
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger render={<Button onClick={handleNew} />}>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={exportCSV} className="h-9 gap-1.5">
+            <Download className="size-4" />
+            <span className="hidden sm:inline">CSV</span>
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger render={<Button onClick={handleNew} />}>
             <Plus className="size-4" />
             Novo Produto
           </DialogTrigger>
@@ -215,7 +229,8 @@ export default function ProdutosPage() {
               </div>
             </form>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       {loading ? (

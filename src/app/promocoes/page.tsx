@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Pencil, Trash2, Tag } from "lucide-react";
+import { Plus, Pencil, Trash2, Tag, SlidersHorizontal, Download, ChevronUp, ChevronDown } from "lucide-react";
 
 interface Produto {
   id: number;
@@ -102,6 +102,35 @@ function tipoLabel(item: Promocao, produtos: Produto[]): string {
   }
 }
 
+type ColKey = 'nome' | 'produto' | 'tipo' | 'inicio' | 'fim' | 'ativo';
+
+const COLUNAS_DEFAULT: { key: ColKey; label: string; visible: boolean; required?: boolean }[] = [
+  { key: 'nome', label: 'Nome', visible: true, required: true },
+  { key: 'produto', label: 'Produto', visible: true },
+  { key: 'tipo', label: 'Tipo / Condição', visible: true },
+  { key: 'inicio', label: 'Início', visible: false },
+  { key: 'fim', label: 'Fim', visible: false },
+  { key: 'ativo', label: 'Ativo', visible: true },
+];
+
+const STORAGE_KEY = 'promocoes-columns-v1';
+
+function loadColunas(): typeof COLUNAS_DEFAULT {
+  if (typeof window === 'undefined') return COLUNAS_DEFAULT;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        const keys = new Set(parsed.map((c: { key: string }) => c.key));
+        const missing = COLUNAS_DEFAULT.filter(c => !keys.has(c.key));
+        return [...parsed, ...missing];
+      }
+    }
+  } catch {}
+  return COLUNAS_DEFAULT;
+}
+
 export default function PromocoesPage() {
   const [items, setItems] = useState<Promocao[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -109,6 +138,62 @@ export default function PromocoesPage() {
   const [form, setForm] = useState<FormData>(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  const [colunasConfig, setColunasConfig] = useState(COLUNAS_DEFAULT);
+  const [colunasOpen, setColunasOpen] = useState(false);
+  const colunasRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setColunasConfig(loadColunas()); }, []);
+
+  useEffect(() => {
+    if (!colunasOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (colunasRef.current && !colunasRef.current.contains(e.target as Node)) setColunasOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [colunasOpen]);
+
+  function moveCol(i: number, dir: -1 | 1) {
+    setColunasConfig(prev => {
+      const next = [...prev];
+      const j = i + dir;
+      if (j < 0 || j >= next.length) return prev;
+      [next[i], next[j]] = [next[j], next[i]];
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function toggleCol(key: ColKey) {
+    setColunasConfig(prev => {
+      const next = prev.map(c => c.key === key ? { ...c, visible: !c.visible } : c);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function exportCSV() {
+    const visCols = colunasConfig.filter(c => c.visible);
+    const header = visCols.map(c => c.label);
+    const csvRows = items.map(item => visCols.map(c => {
+      switch (c.key) {
+        case 'nome': return item.nome;
+        case 'produto': return item.produto?.nome ?? '';
+        case 'tipo': return tipoLabel(item, produtos);
+        case 'inicio': return formatDate(item.dataInicio);
+        case 'fim': return formatDate(item.dataFim);
+        case 'ativo': return item.ativo ? 'Ativo' : 'Inativo';
+        default: return '';
+      }
+    }));
+    const csv = [header, ...csvRows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'promocoes.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function fetchItems() {
     try {
@@ -222,6 +307,8 @@ export default function PromocoesPage() {
     }
   }
 
+  const visCols = colunasConfig.filter(c => c.visible);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -235,49 +322,87 @@ export default function PromocoesPage() {
         </Button>
       </div>
 
+      <div className="flex justify-end gap-2">
+        <div className="relative" ref={colunasRef}>
+          <Button variant="outline" size="sm" onClick={() => setColunasOpen(v => !v)} className="h-9">
+            <SlidersHorizontal className="size-4" />
+            <span className="hidden sm:inline">Colunas</span>
+          </Button>
+          {colunasOpen && (
+            <div className="absolute right-0 top-full mt-1 z-20 bg-card border rounded-lg shadow-lg p-3 space-y-1 min-w-[200px]">
+              {colunasConfig.map((col, i) => (
+                <div key={col.key} className="flex items-center gap-1">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer flex-1">
+                    <input type="checkbox" checked={col.visible} onChange={() => toggleCol(col.key)} disabled={col.required} />
+                    {col.label}
+                  </label>
+                  <div className="flex gap-0.5">
+                    <button onClick={() => moveCol(i, -1)} disabled={i === 0} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 rounded"><ChevronUp className="size-3" /></button>
+                    <button onClick={() => moveCol(i, 1)} disabled={i === colunasConfig.length - 1} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 rounded"><ChevronDown className="size-3" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <Button variant="outline" size="sm" onClick={exportCSV} className="h-9">
+          <Download className="size-4" />
+          <span className="hidden sm:inline">CSV</span>
+        </Button>
+      </div>
+
       <div className="rounded-lg border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Nome</TableHead>
-              <TableHead className="hidden sm:table-cell">Produto</TableHead>
-              <TableHead className="hidden md:table-cell">Tipo / Condição</TableHead>
-              <TableHead className="hidden md:table-cell">Início</TableHead>
-              <TableHead className="hidden md:table-cell">Fim</TableHead>
-              <TableHead>Ativo</TableHead>
+              {visCols.map(col => (
+                <TableHead key={col.key}>{col.label}</TableHead>
+              ))}
               <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={visCols.length + 1} className="text-center py-8 text-muted-foreground">
                   Carregando...
                 </TableCell>
               </TableRow>
             ) : items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={visCols.length + 1} className="text-center py-8 text-muted-foreground">
                   Nenhuma promoção cadastrada
                 </TableCell>
               </TableRow>
             ) : (
               items.map((item) => (
                 <TableRow key={item.id} className="cursor-pointer hover:bg-accent/50 transition-colors" onDoubleClick={() => openEdit(item)}>
-                  <TableCell className="font-medium">{item.nome}</TableCell>
-                  <TableCell className="hidden sm:table-cell">{item.produto?.nome}</TableCell>
-                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                    {tipoLabel(item, produtos)}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">{formatDate(item.dataInicio)}</TableCell>
-                  <TableCell className="hidden md:table-cell">{formatDate(item.dataFim)}</TableCell>
-                  <TableCell>
-                    {item.ativo ? (
-                      <Badge className="bg-green-600 text-white">Ativo</Badge>
-                    ) : (
-                      <Badge className="bg-red-600 text-white">Inativo</Badge>
-                    )}
-                  </TableCell>
+                  {visCols.map(col => {
+                    switch (col.key) {
+                      case 'nome':
+                        return <TableCell key={col.key} className="font-medium">{item.nome}</TableCell>;
+                      case 'produto':
+                        return <TableCell key={col.key}>{item.produto?.nome}</TableCell>;
+                      case 'tipo':
+                        return <TableCell key={col.key} className="text-sm text-muted-foreground">{tipoLabel(item, produtos)}</TableCell>;
+                      case 'inicio':
+                        return <TableCell key={col.key}>{formatDate(item.dataInicio)}</TableCell>;
+                      case 'fim':
+                        return <TableCell key={col.key}>{formatDate(item.dataFim)}</TableCell>;
+                      case 'ativo':
+                        return (
+                          <TableCell key={col.key}>
+                            {item.ativo ? (
+                              <Badge className="bg-green-600 text-white">Ativo</Badge>
+                            ) : (
+                              <Badge className="bg-red-600 text-white">Inativo</Badge>
+                            )}
+                          </TableCell>
+                        );
+                      default:
+                        return <TableCell key={col.key} />;
+                    }
+                  })}
                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       <Button variant="ghost" size="icon-sm" onClick={() => openEdit(item)}>

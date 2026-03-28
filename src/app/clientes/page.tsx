@@ -19,12 +19,22 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Pencil, Trash2, Search, Users, SlidersHorizontal } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Search,
+  Users,
+  SlidersHorizontal,
+  ChevronUp,
+  ChevronDown,
+  Download,
+} from "lucide-react";
 
 function formatPhone(phone: string) {
   const raw = phone.replace(/\D/g, "");
-  if (raw.length === 11) return `(${raw.slice(0,2)}) ${raw.slice(2,7)}-${raw.slice(7)}`;
-  if (raw.length === 10) return `(${raw.slice(0,2)}) ${raw.slice(2,6)}-${raw.slice(6)}`;
+  if (raw.length === 11) return `(${raw.slice(0, 2)}) ${raw.slice(2, 7)}-${raw.slice(7)}`;
+  if (raw.length === 10) return `(${raw.slice(0, 2)}) ${raw.slice(2, 6)}-${raw.slice(6)}`;
   return phone;
 }
 
@@ -53,41 +63,66 @@ const emptyForm = {
   observacoes: "",
 };
 
-const columnDefs = [
-  { key: "nome", label: "Nome", required: true },
-  { key: "telefone", label: "Telefone", defaultVisible: true },
-  { key: "endereco", label: "Endereço", defaultVisible: false },
-  { key: "bairro", label: "Bairro", defaultVisible: true },
-  { key: "cidade", label: "Cidade", defaultVisible: true },
-  { key: "cep", label: "CEP", defaultVisible: false },
-  { key: "enderecoAlternativo", label: "Plus Code", defaultVisible: false },
-  { key: "observacoes", label: "Observações", defaultVisible: false },
-] as const;
+type ColKey = "nome" | "telefone" | "endereco" | "bairro" | "cidade" | "cep" | "pluscode" | "obs";
 
-const STORAGE_KEY = "clientes-columns";
-
-function getDefaultVisibility(): Record<string, boolean> {
-  const defaults: Record<string, boolean> = {};
-  for (const col of columnDefs) {
-    defaults[col.key] = ("required" in col && col.required) ? true : ("defaultVisible" in col ? col.defaultVisible : false);
-  }
-  return defaults;
+interface ColDef {
+  key: ColKey;
+  label: string;
+  visible: boolean;
+  required?: boolean;
 }
 
-function loadVisibility(): Record<string, boolean> {
-  if (typeof window === "undefined") return getDefaultVisibility();
+const COLUNAS_DEFAULT: ColDef[] = [
+  { key: "nome", label: "Nome", visible: true, required: true },
+  { key: "telefone", label: "Telefone", visible: true },
+  { key: "endereco", label: "Endereço", visible: false },
+  { key: "bairro", label: "Bairro", visible: true },
+  { key: "cidade", label: "Cidade", visible: true },
+  { key: "cep", label: "CEP", visible: false },
+  { key: "pluscode", label: "Plus Code", visible: false },
+  { key: "obs", label: "Observações", visible: false },
+];
+
+const STORAGE_KEY = "clientes-columns-v2";
+
+function loadColunas(): ColDef[] {
+  if (typeof window === "undefined") return COLUNAS_DEFAULT;
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      const parsed = JSON.parse(stored);
-      const defaults = getDefaultVisibility();
-      // Merge with defaults to handle new columns
-      return { ...defaults, ...parsed };
+      const parsed: { key: ColKey; visible: boolean }[] = JSON.parse(stored);
+      // Rebuild from stored order, merging with defaults for new columns
+      const storedKeys = parsed.map((c) => c.key);
+      const merged: ColDef[] = parsed
+        .map((s) => {
+          const def = COLUNAS_DEFAULT.find((d) => d.key === s.key);
+          if (!def) return null;
+          return { ...def, visible: def.required ? true : s.visible };
+        })
+        .filter((c): c is ColDef => c !== null);
+      // Append any new columns not yet stored
+      for (const def of COLUNAS_DEFAULT) {
+        if (!storedKeys.includes(def.key)) {
+          merged.push(def);
+        }
+      }
+      return merged;
     }
   } catch {
     // ignore
   }
-  return getDefaultVisibility();
+  return COLUNAS_DEFAULT;
+}
+
+function saveColunas(cols: ColDef[]) {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(cols.map((c) => ({ key: c.key, visible: c.visible })))
+    );
+  } catch {
+    // ignore
+  }
 }
 
 export default function ClientesPage() {
@@ -98,43 +133,50 @@ export default function ClientesPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [buscandoCep, setBuscandoCep] = useState(false);
-  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(getDefaultVisibility);
-  const [columnsOpen, setColumnsOpen] = useState(false);
-  const columnsRef = useRef<HTMLDivElement>(null);
+  const [colunasConfig, setColunasConfig] = useState<ColDef[]>(COLUNAS_DEFAULT);
+  const [colunasOpen, setColunasOpen] = useState(false);
+  const colunasRef = useRef<HTMLDivElement>(null);
 
   // Inline cell editing state
-  const [editingCell, setEditingCell] = useState<{id: number, field: string} | null>(null);
+  const [editingCell, setEditingCell] = useState<{ id: number; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState("");
 
-  // Load column visibility from localStorage on mount
+  // Load column config from localStorage on mount
   useEffect(() => {
-    setColumnVisibility(loadVisibility());
+    setColunasConfig(loadColunas());
   }, []);
 
-  // Save to localStorage when visibility changes
-  const updateColumnVisibility = useCallback((key: string, visible: boolean) => {
-    setColumnVisibility((prev) => {
-      const next = { ...prev, [key]: visible };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      return next;
-    });
-  }, []);
-
-  // Close dropdown on click outside
+  // Close columns dropdown on click outside
   useEffect(() => {
-    if (!columnsOpen) return;
+    if (!colunasOpen) return;
     function handleClickOutside(e: MouseEvent) {
-      if (columnsRef.current && !columnsRef.current.contains(e.target as Node)) {
-        setColumnsOpen(false);
+      if (colunasRef.current && !colunasRef.current.contains(e.target as Node)) {
+        setColunasOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [columnsOpen]);
+  }, [colunasOpen]);
 
-  function colClass(key: string, responsiveClass?: string): string {
-    if (!columnVisibility[key]) return "hidden";
-    return responsiveClass ?? "";
+  function toggleCol(key: ColKey) {
+    setColunasConfig((prev) => {
+      const next = prev.map((c) =>
+        c.key === key && !c.required ? { ...c, visible: !c.visible } : c
+      );
+      saveColunas(next);
+      return next;
+    });
+  }
+
+  function moveCol(i: number, dir: -1 | 1) {
+    setColunasConfig((prev) => {
+      const next = [...prev];
+      const j = i + dir;
+      if (j < 0 || j >= next.length) return prev;
+      [next[i], next[j]] = [next[j], next[i]];
+      saveColunas(next);
+      return next;
+    });
   }
 
   async function buscarCep(cep: string) {
@@ -209,7 +251,6 @@ export default function ClientesPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-
     try {
       if (editingId) {
         await fetch(`/api/clientes/${editingId}`, {
@@ -224,7 +265,6 @@ export default function ClientesPage() {
           body: JSON.stringify(form),
         });
       }
-
       setDialogOpen(false);
       setEditingId(null);
       setForm(emptyForm);
@@ -250,12 +290,199 @@ export default function ClientesPage() {
 
   async function handleDelete(id: number) {
     if (!confirm("Tem certeza que deseja excluir este cliente?")) return;
-
     try {
       await fetch(`/api/clientes/${id}`, { method: "DELETE" });
       fetchClientes();
     } catch (error) {
       console.error("Erro ao excluir cliente:", error);
+    }
+  }
+
+  function exportClientesCSV() {
+    const visibleCols = colunasConfig.filter((c) => c.visible);
+
+    function getCellValue(cliente: Cliente, key: ColKey): string {
+      switch (key) {
+        case "nome": return cliente.nome;
+        case "telefone": return formatPhone(cliente.telefone);
+        case "endereco": return [cliente.rua, cliente.numero].filter(Boolean).join(", ") || "";
+        case "bairro": return cliente.bairro;
+        case "cidade": return cliente.cidade;
+        case "cep": return cliente.cep || "";
+        case "pluscode": return cliente.enderecoAlternativo || "";
+        case "obs": return cliente.observacoes || "";
+        default: return "";
+      }
+    }
+
+    function escapeCSV(val: string): string {
+      if (val.includes('"') || val.includes(",") || val.includes("\n")) {
+        return `"${val.replace(/"/g, '""')}"`;
+      }
+      return val;
+    }
+
+    const headers = visibleCols.map((c) => escapeCSV(c.label)).join(",");
+    const rows = clientes.map((cliente) =>
+      visibleCols.map((c) => escapeCSV(getCellValue(cliente, c.key))).join(",")
+    );
+
+    const csv = [headers, ...rows].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "clientes.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const visibleCols = colunasConfig.filter((c) => c.visible);
+
+  function renderHeaderCell(col: ColDef) {
+    return <TableHead key={col.key}>{col.label}</TableHead>;
+  }
+
+  function renderBodyCell(cliente: Cliente, col: ColDef) {
+    switch (col.key) {
+      case "nome":
+        return (
+          <TableCell key={col.key} className="font-medium" onClick={(e) => e.stopPropagation()}>
+            {editingCell?.id === cliente.id && editingCell?.field === "nome" ? (
+              <input
+                autoFocus
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onBlur={() => saveInlineEdit(cliente.id, "nome", editingValue)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveInlineEdit(cliente.id, "nome", editingValue);
+                  if (e.key === "Escape") setEditingCell(null);
+                }}
+                className="h-7 w-full bg-transparent border-b border-primary text-sm font-medium outline-none"
+              />
+            ) : (
+              <span
+                className="cursor-pointer hover:text-primary transition-colors"
+                onClick={() => {
+                  setEditingCell({ id: cliente.id, field: "nome" });
+                  setEditingValue(cliente.nome);
+                }}
+              >
+                {cliente.nome}
+              </span>
+            )}
+          </TableCell>
+        );
+      case "telefone":
+        return (
+          <TableCell key={col.key} onClick={(e) => e.stopPropagation()}>
+            {editingCell?.id === cliente.id && editingCell?.field === "telefone" ? (
+              <input
+                autoFocus
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onBlur={() => saveInlineEdit(cliente.id, "telefone", editingValue)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveInlineEdit(cliente.id, "telefone", editingValue);
+                  if (e.key === "Escape") setEditingCell(null);
+                }}
+                className="h-7 w-full bg-transparent border-b border-primary text-sm outline-none"
+              />
+            ) : (
+              <span
+                className="cursor-pointer hover:text-primary transition-colors"
+                onClick={() => {
+                  setEditingCell({ id: cliente.id, field: "telefone" });
+                  setEditingValue(cliente.telefone);
+                }}
+              >
+                {formatPhone(cliente.telefone)}
+              </span>
+            )}
+          </TableCell>
+        );
+      case "endereco":
+        return (
+          <TableCell key={col.key} onClick={(e) => e.stopPropagation()}>
+            {[cliente.rua, cliente.numero].filter(Boolean).join(", ") || "—"}
+          </TableCell>
+        );
+      case "bairro":
+        return (
+          <TableCell key={col.key} onClick={(e) => e.stopPropagation()}>
+            {editingCell?.id === cliente.id && editingCell?.field === "bairro" ? (
+              <input
+                autoFocus
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onBlur={() => saveInlineEdit(cliente.id, "bairro", editingValue)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveInlineEdit(cliente.id, "bairro", editingValue);
+                  if (e.key === "Escape") setEditingCell(null);
+                }}
+                className="h-7 w-full bg-transparent border-b border-primary text-sm outline-none"
+              />
+            ) : (
+              <span
+                className="cursor-pointer hover:text-primary transition-colors"
+                onClick={() => {
+                  setEditingCell({ id: cliente.id, field: "bairro" });
+                  setEditingValue(cliente.bairro);
+                }}
+              >
+                {cliente.bairro}
+              </span>
+            )}
+          </TableCell>
+        );
+      case "cidade":
+        return (
+          <TableCell key={col.key} onClick={(e) => e.stopPropagation()}>
+            {editingCell?.id === cliente.id && editingCell?.field === "cidade" ? (
+              <input
+                autoFocus
+                value={editingValue}
+                onChange={(e) => setEditingValue(e.target.value)}
+                onBlur={() => saveInlineEdit(cliente.id, "cidade", editingValue)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveInlineEdit(cliente.id, "cidade", editingValue);
+                  if (e.key === "Escape") setEditingCell(null);
+                }}
+                className="h-7 w-full bg-transparent border-b border-primary text-sm outline-none"
+              />
+            ) : (
+              <span
+                className="cursor-pointer hover:text-primary transition-colors"
+                onClick={() => {
+                  setEditingCell({ id: cliente.id, field: "cidade" });
+                  setEditingValue(cliente.cidade);
+                }}
+              >
+                {cliente.cidade}
+              </span>
+            )}
+          </TableCell>
+        );
+      case "cep":
+        return (
+          <TableCell key={col.key} onClick={(e) => e.stopPropagation()}>
+            {cliente.cep || "—"}
+          </TableCell>
+        );
+      case "pluscode":
+        return (
+          <TableCell key={col.key} onClick={(e) => e.stopPropagation()}>
+            {cliente.enderecoAlternativo || "—"}
+          </TableCell>
+        );
+      case "obs":
+        return (
+          <TableCell key={col.key} onClick={(e) => e.stopPropagation()}>
+            {cliente.observacoes || "—"}
+          </TableCell>
+        );
+      default:
+        return <TableCell key={col.key}>—</TableCell>;
     }
   }
 
@@ -302,8 +529,8 @@ export default function ClientesPage() {
                   onChange={(e) => {
                     const raw = e.target.value.replace(/\D/g, "").slice(0, 11);
                     let f = raw;
-                    if (raw.length > 6) f = `(${raw.slice(0,2)}) ${raw.slice(2,7)}-${raw.slice(7)}`;
-                    else if (raw.length > 2) f = `(${raw.slice(0,2)}) ${raw.slice(2)}`;
+                    if (raw.length > 6) f = `(${raw.slice(0, 2)}) ${raw.slice(2, 7)}-${raw.slice(7)}`;
+                    else if (raw.length > 2) f = `(${raw.slice(0, 2)}) ${raw.slice(2)}`;
                     else if (raw.length > 0) f = `(${raw}`;
                     setForm({ ...form, telefone: f });
                   }}
@@ -350,9 +577,7 @@ export default function ClientesPage() {
                   <Input
                     id="numero"
                     value={form.numero}
-                    onChange={(e) =>
-                      setForm({ ...form, numero: e.target.value })
-                    }
+                    onChange={(e) => setForm({ ...form, numero: e.target.value })}
                   />
                 </div>
               </div>
@@ -363,9 +588,7 @@ export default function ClientesPage() {
                   <Input
                     id="bairro"
                     value={form.bairro}
-                    onChange={(e) =>
-                      setForm({ ...form, bairro: e.target.value })
-                    }
+                    onChange={(e) => setForm({ ...form, bairro: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -373,9 +596,7 @@ export default function ClientesPage() {
                   <Input
                     id="cidade"
                     value={form.cidade}
-                    onChange={(e) =>
-                      setForm({ ...form, cidade: e.target.value })
-                    }
+                    onChange={(e) => setForm({ ...form, cidade: e.target.value })}
                   />
                 </div>
               </div>
@@ -431,29 +652,61 @@ export default function ClientesPage() {
             className="pl-9"
           />
         </div>
-        <div className="relative" ref={columnsRef}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={exportClientesCSV}
+          title="Exportar CSV"
+          className="h-9"
+        >
+          <Download className="size-4" />
+          <span className="hidden sm:inline">Exportar</span>
+        </Button>
+        <div className="relative" ref={colunasRef}>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setColumnsOpen((v) => !v)}
+            onClick={() => setColunasOpen((v) => !v)}
             title="Colunas"
             className="h-9"
           >
             <SlidersHorizontal className="size-4" />
             <span className="hidden sm:inline">Colunas</span>
           </Button>
-          {columnsOpen && (
-            <div className="absolute right-0 top-full mt-1 z-20 bg-card border rounded-lg shadow-lg p-3 space-y-2 min-w-[180px]">
-              {columnDefs.map((col) => (
-                <label key={col.key} className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={columnVisibility[col.key] ?? true}
-                    onChange={(e) => updateColumnVisibility(col.key, e.target.checked)}
-                    disabled={"required" in col && col.required}
-                  />
-                  {col.label}
-                </label>
+          {colunasOpen && (
+            <div className="absolute right-0 top-full mt-1 z-20 bg-card border rounded-lg shadow-lg p-3 space-y-1 min-w-[210px]">
+              {colunasConfig.map((col, i) => (
+                <div key={col.key} className="flex items-center gap-1">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer flex-1">
+                    <input
+                      type="checkbox"
+                      checked={col.visible}
+                      onChange={() => toggleCol(col.key)}
+                      disabled={col.required}
+                    />
+                    {col.label}
+                  </label>
+                  <div className="flex flex-col">
+                    <button
+                      type="button"
+                      onClick={() => moveCol(i, -1)}
+                      disabled={i === 0}
+                      className="p-0.5 rounded hover:bg-accent disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Mover para cima"
+                    >
+                      <ChevronUp className="size-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveCol(i, 1)}
+                      disabled={i === colunasConfig.length - 1}
+                      className="p-0.5 rounded hover:bg-accent disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Mover para baixo"
+                    >
+                      <ChevronDown className="size-3" />
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
           )}
@@ -471,114 +724,18 @@ export default function ClientesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Nome</TableHead>
-                <TableHead className={colClass("telefone", "hidden sm:table-cell")}>Telefone</TableHead>
-                <TableHead className={colClass("endereco")}>Endereço</TableHead>
-                <TableHead className={colClass("bairro")}>Bairro</TableHead>
-                <TableHead className={colClass("cidade", "hidden md:table-cell")}>Cidade</TableHead>
-                <TableHead className={colClass("cep")}>CEP</TableHead>
-                <TableHead className={colClass("enderecoAlternativo")}>Plus Code</TableHead>
-                <TableHead className={colClass("observacoes")}>Observações</TableHead>
+                {visibleCols.map((col) => renderHeaderCell(col))}
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {clientes.map((cliente) => (
-                <TableRow key={cliente.id} className="cursor-pointer hover:bg-accent/50 transition-colors" onDoubleClick={() => handleEdit(cliente)}>
-                  <TableCell className="font-medium" onClick={(e) => e.stopPropagation()}>
-                    {editingCell?.id === cliente.id && editingCell?.field === "nome" ? (
-                      <input
-                        autoFocus
-                        value={editingValue}
-                        onChange={(e) => setEditingValue(e.target.value)}
-                        onBlur={() => saveInlineEdit(cliente.id, "nome", editingValue)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") saveInlineEdit(cliente.id, "nome", editingValue);
-                          if (e.key === "Escape") setEditingCell(null);
-                        }}
-                        className="h-7 w-full bg-transparent border-b border-primary text-sm font-medium outline-none"
-                      />
-                    ) : (
-                      <span
-                        className="cursor-pointer hover:text-primary transition-colors"
-                        onClick={() => { setEditingCell({id: cliente.id, field: "nome"}); setEditingValue(cliente.nome); }}
-                      >
-                        {cliente.nome}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className={colClass("telefone", "hidden sm:table-cell")} onClick={(e) => e.stopPropagation()}>
-                    {editingCell?.id === cliente.id && editingCell?.field === "telefone" ? (
-                      <input
-                        autoFocus
-                        value={editingValue}
-                        onChange={(e) => setEditingValue(e.target.value)}
-                        onBlur={() => saveInlineEdit(cliente.id, "telefone", editingValue)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") saveInlineEdit(cliente.id, "telefone", editingValue);
-                          if (e.key === "Escape") setEditingCell(null);
-                        }}
-                        className="h-7 w-full bg-transparent border-b border-primary text-sm outline-none"
-                      />
-                    ) : (
-                      <span
-                        className="cursor-pointer hover:text-primary transition-colors"
-                        onClick={() => { setEditingCell({id: cliente.id, field: "telefone"}); setEditingValue(cliente.telefone); }}
-                      >
-                        {formatPhone(cliente.telefone)}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className={colClass("endereco")}>
-                    {[cliente.rua, cliente.numero].filter(Boolean).join(", ") || "—"}
-                  </TableCell>
-                  <TableCell className={colClass("bairro")} onClick={(e) => e.stopPropagation()}>
-                    {editingCell?.id === cliente.id && editingCell?.field === "bairro" ? (
-                      <input
-                        autoFocus
-                        value={editingValue}
-                        onChange={(e) => setEditingValue(e.target.value)}
-                        onBlur={() => saveInlineEdit(cliente.id, "bairro", editingValue)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") saveInlineEdit(cliente.id, "bairro", editingValue);
-                          if (e.key === "Escape") setEditingCell(null);
-                        }}
-                        className="h-7 w-full bg-transparent border-b border-primary text-sm outline-none"
-                      />
-                    ) : (
-                      <span
-                        className="cursor-pointer hover:text-primary transition-colors"
-                        onClick={() => { setEditingCell({id: cliente.id, field: "bairro"}); setEditingValue(cliente.bairro); }}
-                      >
-                        {cliente.bairro}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className={colClass("cidade", "hidden md:table-cell")} onClick={(e) => e.stopPropagation()}>
-                    {editingCell?.id === cliente.id && editingCell?.field === "cidade" ? (
-                      <input
-                        autoFocus
-                        value={editingValue}
-                        onChange={(e) => setEditingValue(e.target.value)}
-                        onBlur={() => saveInlineEdit(cliente.id, "cidade", editingValue)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") saveInlineEdit(cliente.id, "cidade", editingValue);
-                          if (e.key === "Escape") setEditingCell(null);
-                        }}
-                        className="h-7 w-full bg-transparent border-b border-primary text-sm outline-none"
-                      />
-                    ) : (
-                      <span
-                        className="cursor-pointer hover:text-primary transition-colors"
-                        onClick={() => { setEditingCell({id: cliente.id, field: "cidade"}); setEditingValue(cliente.cidade); }}
-                      >
-                        {cliente.cidade}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className={colClass("cep")}>{cliente.cep || "—"}</TableCell>
-                  <TableCell className={colClass("enderecoAlternativo")}>{cliente.enderecoAlternativo || "—"}</TableCell>
-                  <TableCell className={colClass("observacoes")}>{cliente.observacoes || "—"}</TableCell>
+                <TableRow
+                  key={cliente.id}
+                  className="cursor-pointer hover:bg-accent/50 transition-colors"
+                  onDoubleClick={() => handleEdit(cliente)}
+                >
+                  {visibleCols.map((col) => renderBodyCell(cliente, col))}
                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex justify-end gap-1">
                       <Button

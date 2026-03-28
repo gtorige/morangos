@@ -40,6 +40,7 @@ import {
   SlidersHorizontal,
   ChevronUp,
   ChevronDown,
+  Download,
 } from "lucide-react";
 import { calcSubtotal as calcSubtotalBase } from "@/lib/pedido-utils";
 import { NovoPedidoSheet, NovoPedidoInitialData } from "@/components/novo-pedido-sheet";
@@ -146,11 +147,13 @@ const emptyFilters: Filters = {
   recorrente: "",
 };
 
-type ColKey = 'id' | 'cliente' | 'bairro' | 'total' | 'pgto' | 'formaPgto' | 'entrega' | 'data';
-const COLUNAS_DEFAULT: { key: ColKey; label: string }[] = [
+type ColKey = 'id' | 'cliente' | 'bairro' | 'total' | 'pgto' | 'formaPgto' | 'entrega' | 'data' | 'produto' | 'qtd';
+const COLUNAS_DEFAULT: { key: ColKey; label: string; defaultVisible?: boolean }[] = [
   { key: 'id', label: '#' },
   { key: 'cliente', label: 'Cliente' },
   { key: 'bairro', label: 'Bairro' },
+  { key: 'produto', label: 'Produto', defaultVisible: false },
+  { key: 'qtd', label: 'Qtd', defaultVisible: false },
   { key: 'total', label: 'Total' },
   { key: 'pgto', label: 'Pgto' },
   { key: 'formaPgto', label: 'F. Pgto' },
@@ -272,11 +275,11 @@ function PedidosPageInner() {
       if (saved) {
         const parsed: { key: ColKey; visible: boolean }[] = JSON.parse(saved);
         const savedKeys = new Set(parsed.map(c => c.key));
-        const missing = COLUNAS_DEFAULT.filter(c => !savedKeys.has(c.key)).map(c => ({ key: c.key, visible: true }));
+        const missing = COLUNAS_DEFAULT.filter(c => !savedKeys.has(c.key)).map(c => ({ key: c.key, visible: c.defaultVisible ?? true }));
         return [...parsed, ...missing];
       }
     } catch {}
-    return COLUNAS_DEFAULT.map(c => ({ key: c.key, visible: true }));
+    return COLUNAS_DEFAULT.map(c => ({ key: c.key, visible: c.defaultVisible ?? true }));
   });
   const [colunasOpen, setColunasOpen] = useState(false);
 
@@ -854,6 +857,32 @@ function PedidosPageInner() {
     setColunasConfig(prev => prev.map(c => c.key === key ? { ...c, visible: !c.visible } : c));
   }
 
+  function exportPedidosCSV(pedidosList: typeof pedidos) {
+    const visCols = colunasConfig.filter(c => c.visible);
+    const header = visCols.map(c => COLUNAS_DEFAULT.find(d => d.key === c.key)?.label ?? c.key);
+    const csvRows = pedidosList.map(p => visCols.map(c => {
+      switch (c.key) {
+        case 'id': return String(p.id);
+        case 'cliente': return p.cliente?.nome ?? '';
+        case 'bairro': return p.cliente?.bairro ?? '';
+        case 'produto': return (p.itens ?? []).map(i => i.produto?.nome).filter(Boolean).join(' | ');
+        case 'qtd': return String((p.itens ?? []).reduce((s, i) => s + i.quantidade, 0));
+        case 'total': return p.total.toFixed(2).replace('.', ',');
+        case 'pgto': return p.situacaoPagamento;
+        case 'formaPgto': return p.formaPagamento?.nome ?? '';
+        case 'entrega': return p.statusEntrega;
+        case 'data': return formatDate(p.dataEntrega);
+        default: return '';
+      }
+    }));
+    const csv = [header, ...csvRows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'pedidos.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const filteredByTab = pedidos.filter((p) => {
     if (filters.formasPagamento.length > 0 && !filters.formasPagamento.includes(p.formaPagamentoId)) return false;
     switch (tab) {
@@ -1404,7 +1433,11 @@ function PedidosPageInner() {
         {/* Desktop table view */}
         <div className="hidden sm:block">
           {/* Column settings */}
-          <div className="flex justify-end mb-1">
+          <div className="flex justify-end gap-2 mb-1">
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => exportPedidosCSV(filteredByTab)}>
+              <Download className="size-3.5" />
+              CSV
+            </Button>
             <div ref={colunasRef} className="relative">
               <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setColunasOpen(o => !o)}>
                 <SlidersHorizontal className="size-3.5" />
@@ -1527,6 +1560,19 @@ function PedidosPageInner() {
                               </span>
                             </TableCell>
                           );
+                        case 'produto': {
+                          const itens = pedido.itens ?? [];
+                          const nome = itens[0]?.produto?.nome ?? '—';
+                          return (
+                            <TableCell key="produto" className="text-sm">
+                              {itens.length <= 1 ? nome : `${nome} +${itens.length - 1}`}
+                            </TableCell>
+                          );
+                        }
+                        case 'qtd': {
+                          const total = (pedido.itens ?? []).reduce((s, i) => s + i.quantidade, 0);
+                          return <TableCell key="qtd" className="text-sm text-center">{total || '—'}</TableCell>;
+                        }
                         case 'data':
                           return (
                             <TableCell key="data" onClick={(e) => e.stopPropagation()}>
