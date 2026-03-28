@@ -53,7 +53,7 @@ export default function ProdutosPage() {
       const res = await fetch("/api/produtos");
       if (!res.ok) return;
       const data = await res.json();
-      setProdutos(data);
+      setProdutos(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Erro ao buscar produtos:", error);
     } finally {

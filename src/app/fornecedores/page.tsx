@@ -41,7 +41,7 @@ export default function FornecedoresPage() {
       const res = await fetch("/api/fornecedores");
       if (!res.ok) return;
       const data = await res.json();
-      setItems(data);
+      setItems(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Erro ao buscar fornecedores:", err);
     } finally {

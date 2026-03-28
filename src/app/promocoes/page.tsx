@@ -115,7 +115,7 @@ export default function PromocoesPage() {
       const res = await fetch("/api/promocoes");
       if (!res.ok) return;
       const data = await res.json();
-      setItems(data);
+      setItems(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Erro ao buscar promoções:", error);
     } finally {
@@ -128,7 +128,7 @@ export default function PromocoesPage() {
       const res = await fetch("/api/produtos");
       if (!res.ok) return;
       const data = await res.json();
-      setProdutos(data);
+      setProdutos(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Erro ao buscar produtos:", error);
     }

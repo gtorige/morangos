@@ -177,7 +177,7 @@ export default function ClientesPage() {
       const res = await fetch(`/api/clientes${params}`);
       if (!res.ok) return;
       const data = await res.json();
-      setClientes(data);
+      setClientes(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Erro ao buscar clientes:", error);
     } finally {
