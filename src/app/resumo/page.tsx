@@ -31,11 +31,17 @@ interface Comparativo {
   variacaoRecebido: number; variacaoTicketMedio: number;
 }
 
+interface DespesaCategoria {
+  categoria: string; realizado: number; projetado: number;
+}
+
 interface Financeiro {
   receita: number; recebido: number; aReceber: number;
   despesas: number; despesasPagas: number; despesasPendentes: number;
-  despesasVencidas: number; lucroEstimado: number; fluxoCaixa: number;
+  despesasVencidas: number; despesasRealizadas: number; despesasProjetadas: number;
+  lucroEstimado: number; fluxoCaixa: number;
   contasPendentesQtd: number; contasVencidasQtd: number;
+  despesasPorCategoria: DespesaCategoria[];
 }
 
 interface Resumo {
@@ -423,11 +429,14 @@ function GeralTab({ resumo, periodo, periodoLabels, isAno }: { resumo: Resumo; p
 function FinanceiroTab({ resumo, periodo, periodoLabels }: { resumo: Resumo; periodo: Periodo; periodoLabels: Record<Periodo, string> }) {
   const f = resumo.financeiro;
   const maxBar = Math.max(f.receita, f.despesas, 1);
+  const receitaProjetada = f.aReceber;
+  const resultadoRealizado = f.recebido - f.despesasRealizadas;
+  const resultadoProjetado = resumo.totalVendido - f.despesasRealizadas - f.despesasProjetadas;
 
   return (
     <div className="space-y-6">
       {/* Financial KPIs */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         <Card className={f.fluxoCaixa >= 0 ? "border-green-500/30" : "border-red-500/30"}>
           <CardContent className="py-3">
             <p className="text-xs text-muted-foreground">Fluxo de Caixa</p>
@@ -435,6 +444,32 @@ function FinanceiroTab({ resumo, periodo, periodoLabels }: { resumo: Resumo; per
             <p className="text-xs text-muted-foreground">recebido - despesas pagas</p>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardContent className="py-3">
+            <p className="text-xs text-muted-foreground">Despesas Realizadas</p>
+            <p className="text-xl font-bold">{fmt(f.despesasRealizadas)}</p>
+            <p className="text-xs text-muted-foreground">{f.contasPendentesQtd + f.contasVencidasQtd > 0 ? "contas pagas no periodo" : "nenhuma despesa paga"}</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-yellow-500/30">
+          <CardContent className="py-3">
+            <p className="text-xs text-muted-foreground">Despesas Projetadas</p>
+            <p className="text-xl font-bold text-yellow-500">{fmt(f.despesasProjetadas)}</p>
+            <p className="text-xs text-muted-foreground">{f.contasPendentesQtd} conta{f.contasPendentesQtd !== 1 ? "s" : ""} pendente{f.contasPendentesQtd !== 1 ? "s" : ""}</p>
+          </CardContent>
+        </Card>
+
+        {f.despesasVencidas > 0 && (
+          <Card className="border-red-500/30">
+            <CardContent className="py-3">
+              <p className="text-xs text-muted-foreground">Despesas Vencidas</p>
+              <p className="text-xl font-bold text-red-500">{fmt(f.despesasVencidas)}</p>
+              <p className="text-xs text-muted-foreground">{f.contasVencidasQtd} conta{f.contasVencidasQtd !== 1 ? "s" : ""} vencida{f.contasVencidasQtd !== 1 ? "s" : ""}</p>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardContent className="py-3">
@@ -451,14 +486,6 @@ function FinanceiroTab({ resumo, periodo, periodoLabels }: { resumo: Resumo; per
             <p className="text-xs text-muted-foreground">vendido - recebido</p>
           </CardContent>
         </Card>
-
-        <SectionCard title="Contas Pendentes" icon={Receipt} href="/contas">
-          <p className="text-xl font-bold">{fmt(f.despesasPendentes)}</p>
-          <p className="text-xs text-muted-foreground">
-            {f.contasPendentesQtd} conta{f.contasPendentesQtd !== 1 ? "s" : ""}
-            {f.contasVencidasQtd > 0 && <span className="text-red-500"> · {f.contasVencidasQtd} vencida{f.contasVencidasQtd !== 1 ? "s" : ""}</span>}
-          </p>
-        </SectionCard>
       </div>
 
       {/* Revenue vs Expenses */}
@@ -473,8 +500,8 @@ function FinanceiroTab({ resumo, periodo, periodoLabels }: { resumo: Resumo; per
           {[
             { label: "Receita (vendas)", value: f.receita, color: "bg-green-500", textColor: "text-green-500" },
             { label: "Recebido", value: f.recebido, color: "bg-teal-500", textColor: "text-teal-500" },
-            { label: "Despesas pagas", value: f.despesasPagas, color: "bg-red-400", textColor: "text-red-400" },
-            { label: "Despesas pendentes", value: f.despesasPendentes, color: "bg-yellow-500", textColor: "text-yellow-500" },
+            { label: "Despesas realizadas", value: f.despesasRealizadas, color: "bg-red-400", textColor: "text-red-400" },
+            { label: "Despesas projetadas", value: f.despesasProjetadas, color: "bg-yellow-500", textColor: "text-yellow-500" },
           ].map((row) => (
             <div key={row.label} className="space-y-1">
               <div className="flex justify-between text-sm"><span>{row.label}</span><span className={`font-medium ${row.textColor}`}>{fmt(row.value)}</span></div>
@@ -489,6 +516,48 @@ function FinanceiroTab({ resumo, periodo, periodoLabels }: { resumo: Resumo; per
           )}
         </CardContent>
       </Card>
+
+      {/* Category breakdown */}
+      {f.despesasPorCategoria && f.despesasPorCategoria.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Receipt className="size-4" />
+              Despesas por Categoria
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1">
+              {/* Header */}
+              <div className="grid grid-cols-4 gap-2 text-xs text-muted-foreground font-medium pb-1 border-b border-border">
+                <span>Categoria</span>
+                <span className="text-right">Realizado</span>
+                <span className="text-right">Projetado</span>
+                <span className="text-right">Total</span>
+              </div>
+              {/* Rows */}
+              {f.despesasPorCategoria.map((cat) => {
+                const total = cat.realizado + cat.projetado;
+                return (
+                  <div key={cat.categoria} className="grid grid-cols-4 gap-2 text-sm py-1.5 border-b border-border/50 last:border-0">
+                    <span className="truncate">{cat.categoria}</span>
+                    <span className="text-right text-red-400">{fmt(cat.realizado)}</span>
+                    <span className="text-right text-yellow-500">{fmt(cat.projetado)}</span>
+                    <span className="text-right font-medium">{fmt(total)}</span>
+                  </div>
+                );
+              })}
+              {/* Total row */}
+              <div className="grid grid-cols-4 gap-2 text-sm py-1.5 border-t border-border font-medium">
+                <span>Total</span>
+                <span className="text-right text-red-400">{fmt(f.despesasRealizadas)}</span>
+                <span className="text-right text-yellow-500">{fmt(f.despesasProjetadas)}</span>
+                <span className="text-right">{fmt(f.despesas)}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Payment breakdown */}
       <SectionCard title="Formas de Pagamento" icon={CreditCard}>
@@ -516,14 +585,14 @@ function FinanceiroTab({ resumo, periodo, periodoLabels }: { resumo: Resumo; per
         <CardContent>
           <div className="space-y-2 text-sm">
             {[
-              { label: "Total vendido", value: fmt(f.receita), style: "" },
-              { label: "(-) Pendente de recebimento", value: fmt(f.aReceber), style: "text-yellow-500" },
-              { label: "(=) Total recebido", value: fmt(f.recebido), style: "text-teal-500 font-medium" },
-              { label: "(-) Despesas pagas", value: fmt(f.despesasPagas), style: "text-red-400" },
-              { label: "(=) Fluxo de caixa", value: fmt(f.fluxoCaixa), style: f.fluxoCaixa >= 0 ? "text-green-500 font-bold" : "text-red-500 font-bold" },
+              { label: "Receita (Realizado)", value: fmt(f.recebido), style: "text-teal-500 font-medium" },
+              { label: "Receita (Projetado)", value: fmt(receitaProjetada), style: "text-yellow-500" },
               { label: "", value: "", style: "border-t border-border pt-2" },
-              { label: "Total de despesas (pagas + pendentes)", value: fmt(f.despesas), style: "text-red-400" },
-              { label: "(=) Lucro estimado (receita - despesas)", value: fmt(f.lucroEstimado), style: f.lucroEstimado >= 0 ? "text-green-500 font-bold" : "text-red-500 font-bold" },
+              { label: "Despesas (Realizado)", value: fmt(f.despesasRealizadas), style: "text-red-400" },
+              { label: "Despesas (Projetado)", value: fmt(f.despesasProjetadas), style: "text-yellow-500" },
+              { label: "", value: "", style: "border-t border-border pt-2" },
+              { label: "Resultado (Realizado)", value: fmt(resultadoRealizado), style: resultadoRealizado >= 0 ? "text-green-500 font-bold" : "text-red-500 font-bold" },
+              { label: "Resultado (Projetado)", value: fmt(resultadoProjetado), style: resultadoProjetado >= 0 ? "text-green-500 font-bold" : "text-red-500 font-bold" },
             ].map((row, i) => row.label ? (
               <div key={i} className={`flex justify-between ${row.style}`}>
                 <span className="text-muted-foreground">{row.label}</span>

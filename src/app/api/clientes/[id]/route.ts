@@ -46,10 +46,10 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { nome, telefone, rua, numero, bairro, cidade, observacoes } = body;
+    const { nome, telefone, cep, rua, numero, bairro, cidade, enderecoAlternativo, observacoes } = body;
     const cliente = await prisma.cliente.update({
       where: { id: Number(id) },
-      data: { nome, telefone, rua, numero, bairro, cidade, observacoes },
+      data: { nome, telefone, cep, rua, numero, bairro, cidade, enderecoAlternativo, observacoes },
     });
 
     return NextResponse.json(cliente);

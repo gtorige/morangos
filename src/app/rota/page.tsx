@@ -32,6 +32,7 @@ interface Cliente {
   numero: string;
   bairro: string;
   cidade: string;
+  enderecoAlternativo?: string;
 }
 
 interface Pedido {
@@ -62,12 +63,19 @@ function todayString() {
 }
 
 function buildAddress(cliente: Cliente) {
+  // Use endereço alternativo if available (e.g. "Shopping Ibirapuera, São Paulo")
+  if (cliente.enderecoAlternativo?.trim()) {
+    return cliente.enderecoAlternativo.trim();
+  }
   return [cliente.rua, cliente.numero, cliente.bairro, cliente.cidade]
     .filter(Boolean)
     .join(", ");
 }
 
 function buildDisplayAddress(cliente: Cliente) {
+  if (cliente.enderecoAlternativo?.trim()) {
+    return cliente.enderecoAlternativo.trim();
+  }
   const street = [cliente.rua, cliente.numero].filter(Boolean).join(", ");
   return [street, cliente.bairro].filter(Boolean).join(" - ");
 }
@@ -159,7 +167,23 @@ export default function RotaPage() {
       if (!res.ok) {
         const err = await res.json();
         console.error("Erro na otimização:", err);
-        alert("Erro ao otimizar rota. Verifique os endereços.");
+        const details = err.details?.error?.message || "";
+        if (details.includes("could not be geocoded") || details.includes("GEOCODING")) {
+          const badAddresses = waypoints
+            .filter((w) => !w.address || w.address.trim().length < 5)
+            .map((w) => `• Pedido ${w.pedidoId}`);
+          alert(
+            "Erro: alguns endereços não puderam ser encontrados pelo Google.\n\n" +
+            "Verifique se todos os clientes têm rua, número e cidade preenchidos.\n" +
+            (badAddresses.length > 0 ? "\nEndereços incompletos:\n" + badAddresses.join("\n") : "") +
+            "\n\nDica: use endereços completos (ex: Av. Paulista, 1000, São Paulo) em vez de nomes de locais."
+          );
+        } else {
+          alert(
+            "Erro ao otimizar rota.\n\n" +
+            (details || "Verifique os endereços dos clientes e tente novamente.")
+          );
+        }
         return;
       }
 
@@ -306,7 +330,7 @@ export default function RotaPage() {
           {!enderecoSalvo || showEnderecoForm ? (
             <div className="space-y-3">
               <Input
-                placeholder="Ex: Rua das Flores, 100, Centro, São Paulo"
+                placeholder="Ex: 588C+R5 São Paulo ou Rua das Flores, 100, São Paulo"
                 value={enderecoPartida}
                 onChange={(e) => setEnderecoPartida(e.target.value)}
               />

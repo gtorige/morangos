@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "../../../../../auth";
+import { getGoogleEmbedApiKey } from "@/lib/config";
 
 export async function GET(request: NextRequest) {
   const session = await auth();
@@ -7,9 +8,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
   }
 
-  const apiKey = process.env.GOOGLE_ROUTES_API_KEY;
+  const apiKey = await getGoogleEmbedApiKey();
   if (!apiKey) {
-    return NextResponse.json({ error: "API key not configured" }, { status: 500 });
+    return NextResponse.json({ error: "API key não configurada. Acesse Configurações para adicionar." }, { status: 500 });
   }
 
   const { searchParams } = new URL(request.url);

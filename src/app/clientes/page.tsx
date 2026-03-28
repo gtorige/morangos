@@ -32,20 +32,24 @@ interface Cliente {
   id: number;
   nome: string;
   telefone: string;
+  cep: string;
   rua: string;
   numero: string;
   bairro: string;
   cidade: string;
+  enderecoAlternativo: string;
   observacoes: string;
 }
 
 const emptyForm = {
   nome: "",
   telefone: "",
+  cep: "",
   rua: "",
   numero: "",
   bairro: "",
   cidade: "",
+  enderecoAlternativo: "",
   observacoes: "",
 };
 
@@ -56,6 +60,29 @@ export default function ClientesPage() {
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [buscandoCep, setBuscandoCep] = useState(false);
+
+  async function buscarCep(cep: string) {
+    const cleaned = cep.replace(/\D/g, "");
+    if (cleaned.length !== 8) return;
+    setBuscandoCep(true);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${cleaned}/json/`);
+      const data = await res.json();
+      if (!data.erro) {
+        setForm((f) => ({
+          ...f,
+          rua: data.logradouro || f.rua,
+          bairro: data.bairro || f.bairro,
+          cidade: data.localidade || f.cidade,
+        }));
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setBuscandoCep(false);
+    }
+  }
 
   useEffect(() => {
     fetchClientes();
@@ -89,8 +116,10 @@ export default function ClientesPage() {
       telefone: cliente.telefone,
       rua: cliente.rua,
       numero: cliente.numero,
+      cep: cliente.cep || "",
       bairro: cliente.bairro,
       cidade: cliente.cidade,
+      enderecoAlternativo: cliente.enderecoAlternativo || "",
       observacoes: cliente.observacoes,
     });
     setDialogOpen(true);
@@ -191,6 +220,32 @@ export default function ClientesPage() {
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="cep">CEP</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="cep"
+                    inputMode="numeric"
+                    placeholder="00000-000"
+                    value={form.cep}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/\D/g, "").slice(0, 8);
+                      let formatted = raw;
+                      if (raw.length > 5) formatted = `${raw.slice(0, 5)}-${raw.slice(5)}`;
+                      setForm({ ...form, cep: formatted });
+                      if (raw.length === 8) buscarCep(raw);
+                    }}
+                    className="w-36"
+                  />
+                  {buscandoCep && (
+                    <span className="text-xs text-muted-foreground self-center">Buscando...</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Digite o CEP para preencher o endereço automaticamente.
+                </p>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="rua">Rua</Label>
@@ -233,6 +288,21 @@ export default function ClientesPage() {
                     }
                   />
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="enderecoAlternativo">Plus Code / Local</Label>
+                <Input
+                  id="enderecoAlternativo"
+                  value={form.enderecoAlternativo}
+                  onChange={(e) =>
+                    setForm({ ...form, enderecoAlternativo: e.target.value })
+                  }
+                  placeholder="Ex: 588C+R5 São Paulo"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Plus Code do Google Maps ou nome do local (ex: Shopping Ibirapuera, São Paulo). Quando preenchido, será usado no lugar do endereço para rotas de entrega.
+                </p>
               </div>
 
               <div className="space-y-2">

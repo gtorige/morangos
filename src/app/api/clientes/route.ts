@@ -45,12 +45,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { nome, telefone, rua, numero, bairro, cidade, observacoes } = body;
+    const { nome, telefone, cep, rua, numero, bairro, cidade, enderecoAlternativo, observacoes } = body;
     if (!nome?.trim()) {
       return NextResponse.json({ error: "Nome é obrigatório." }, { status: 400 });
     }
     const cliente = await prisma.cliente.create({
-      data: { nome, telefone: telefone || "", rua: rua || "", numero: numero || "", bairro: bairro || "", cidade: cidade || "", observacoes: observacoes || "" },
+      data: { nome, telefone: telefone || "", cep: cep || "", rua: rua || "", numero: numero || "", bairro: bairro || "", cidade: cidade || "", enderecoAlternativo: enderecoAlternativo || "", observacoes: observacoes || "" },
     });
     return NextResponse.json(cliente, { status: 201 });
   } catch (error) {

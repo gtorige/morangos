@@ -267,11 +267,12 @@ export default function NovoPedidoPage() {
       });
 
       if (res.ok) {
+        const pedidoCriado = await res.json();
         // If recurrent, also create the recurrence with auto-generation
         if (isRecorrente && diasSemana.length > 0) {
           try {
             const today = new Date().toISOString().slice(0, 10);
-            await fetch("/api/recorrentes", {
+            const recRes = await fetch("/api/recorrentes", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -282,12 +283,22 @@ export default function NovoPedidoPage() {
                 dataFim: recDataFim || null,
                 taxaEntrega,
                 observacoes,
+                skipDate: dataEntrega || today,
                 itens: itens.filter(i => i.produtoId).map(i => ({
                   produtoId: Number(i.produtoId),
                   quantidade: Number(i.quantidade),
                 })),
               }),
             });
+            // Link the manual order to the recurrence
+            if (recRes.ok) {
+              const recData = await recRes.json();
+              await fetch(`/api/pedidos/${pedidoCriado.id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ recorrenteId: recData.id }),
+              });
+            }
           } catch (err) {
             console.error("Erro ao criar recorrência:", err);
           }

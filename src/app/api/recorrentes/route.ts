@@ -65,11 +65,18 @@ export async function POST(request: NextRequest) {
 
     let pedidosCriados = 0;
     const current = new Date(inicio);
+    const skipDate = data.skipDate || null;
 
     while (current <= fim) {
       const dayOfWeek = current.getDay();
       if (diasArr.includes(dayOfWeek)) {
         const dateStr = current.toISOString().slice(0, 10);
+
+        // Skip date that already has a manually created order
+        if (skipDate && dateStr === skipDate) {
+          current.setDate(current.getDate() + 1);
+          continue;
+        }
 
         // Build items with current prices
         const pedidoItens = recorrente.itens.map((item) => {

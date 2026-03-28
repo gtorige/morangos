@@ -61,38 +61,44 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // --- KPIs current ---
+    // --- Filter: only delivered orders count as revenue ---
+    const entregues = pedidos.filter((p) => p.statusEntrega === "Entregue");
+    const entreguesAnterior = pedidosAnterior.filter((p) => p.statusEntrega === "Entregue");
+
+    // --- KPIs current (revenue from delivered only) ---
     const totalPedidos = pedidos.length;
-    const totalVendido = pedidos.reduce((acc, p) => acc + p.total, 0);
-    const totalRecebido = pedidos.reduce((acc, p) => acc + p.valorPago, 0);
+    const totalEntregues = entregues.length;
+    const totalVendido = entregues.reduce((acc, p) => acc + p.total, 0);
+    const totalRecebido = entregues.reduce((acc, p) => acc + p.valorPago, 0);
     const totalPendente = totalVendido - totalRecebido;
-    const totalTaxaEntrega = pedidos.reduce(
+    const totalTaxaEntrega = entregues.reduce(
       (acc, p) => acc + p.taxaEntrega,
       0
     );
-    const ticketMedio = totalPedidos > 0 ? totalVendido / totalPedidos : 0;
+    const ticketMedio = totalEntregues > 0 ? totalVendido / totalEntregues : 0;
 
-    // --- KPIs previous ---
-    const totalVendidoAnterior = pedidosAnterior.reduce(
+    // --- KPIs previous (revenue from delivered only) ---
+    const totalVendidoAnterior = entreguesAnterior.reduce(
       (acc, p) => acc + p.total,
       0
     );
     const totalPedidosAnterior = pedidosAnterior.length;
-    const totalRecebidoAnterior = pedidosAnterior.reduce(
+    const totalEntreguesAnterior = entreguesAnterior.length;
+    const totalRecebidoAnterior = entreguesAnterior.reduce(
       (acc, p) => acc + p.valorPago,
       0
     );
     const ticketMedioAnterior =
-      totalPedidosAnterior > 0
-        ? totalVendidoAnterior / totalPedidosAnterior
+      totalEntreguesAnterior > 0
+        ? totalVendidoAnterior / totalEntreguesAnterior
         : 0;
 
-    // --- Sales by product ---
+    // --- Sales by product (delivered only) ---
     const produtoMap = new Map<
       number,
       { produto: string; quantidade: number; total: number }
     >();
-    for (const pedido of pedidos) {
+    for (const pedido of entregues) {
       for (const item of pedido.itens) {
         const existing = produtoMap.get(item.produtoId);
         if (existing) {
@@ -111,12 +117,12 @@ export async function GET(request: NextRequest) {
       (a, b) => b.total - a.total
     );
 
-    // --- Top clients ---
+    // --- Top clients (delivered only) ---
     const clienteMap = new Map<
       number,
       { cliente: string; bairro: string; pedidos: number; total: number; ticketMedio: number }
     >();
-    for (const pedido of pedidos) {
+    for (const pedido of entregues) {
       const existing = clienteMap.get(pedido.clienteId);
       if (existing) {
         existing.pedidos += 1;
@@ -136,12 +142,12 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.total - a.total)
       .slice(0, 10);
 
-    // --- Sales by bairro ---
+    // --- Sales by bairro (delivered only) ---
     const bairroMap = new Map<
       string,
       { bairro: string; pedidos: number; total: number }
     >();
-    for (const pedido of pedidos) {
+    for (const pedido of entregues) {
       const bairro = pedido.cliente.bairro || "Sem bairro";
       const existing = bairroMap.get(bairro);
       if (existing) {
@@ -155,9 +161,9 @@ export async function GET(request: NextRequest) {
       (a, b) => b.total - a.total
     );
 
-    // --- Payment method breakdown ---
+    // --- Payment method breakdown (delivered only) ---
     const pagamentoMap = new Map<string, { forma: string; pedidos: number; total: number }>();
-    for (const pedido of pedidos) {
+    for (const pedido of entregues) {
       const forma = pedido.formaPagamento?.nome || "Não informado";
       const existing = pagamentoMap.get(forma);
       if (existing) {
@@ -183,10 +189,10 @@ export async function GET(request: NextRequest) {
         (statusMap[pedido.statusEntrega] || 0) + 1;
     }
 
-    // --- Daily breakdown ---
+    // --- Daily breakdown (delivered only) ---
     const vendasPorDia: { data: string; total: number; pedidos: number }[] = [];
     const diaMap = new Map<string, { total: number; pedidos: number }>();
-    for (const pedido of pedidos) {
+    for (const pedido of entregues) {
       const existing = diaMap.get(pedido.dataEntrega);
       if (existing) {
         existing.total += pedido.total;
@@ -212,7 +218,7 @@ export async function GET(request: NextRequest) {
 
     if (periodo === "ano") {
       const mesMap = new Map<number, { total: number; pedidos: number }>();
-      for (const pedido of pedidos) {
+      for (const pedido of entregues) {
         const month = parseInt(pedido.dataEntrega.split("-")[1]) - 1;
         const existing = mesMap.get(month);
         if (existing) {
@@ -227,9 +233,9 @@ export async function GET(request: NextRequest) {
         vendasPorMes.push({ mes: m, mesNome: mesesNomes[m], ...vals });
       }
 
-      // Previous year monthly
+      // Previous year monthly (delivered only)
       const mesMapAnterior = new Map<number, { total: number; pedidos: number }>();
-      for (const pedido of pedidosAnterior) {
+      for (const pedido of entreguesAnterior) {
         const month = parseInt(pedido.dataEntrega.split("-")[1]) - 1;
         const existing = mesMapAnterior.get(month);
         if (existing) {
@@ -245,27 +251,56 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // --- Financial: contas a pagar ---
-    const todasContas = await prisma.conta.findMany();
-    const contasPendentes = todasContas.filter((c) => c.situacao === "Pendente");
-    const contasPagas = todasContas.filter((c) => c.situacao === "Pago");
-    const totalContasPendentes = contasPendentes.reduce((a, c) => a + c.valor, 0);
-    const totalContasPagas = contasPagas.reduce((a, c) => a + c.valor, 0);
-    const contasVencidas = contasPendentes.filter((c) => c.vencimento <= new Date().toISOString().slice(0, 10));
-    const totalContasVencidas = contasVencidas.reduce((a, c) => a + c.valor, 0);
+    // --- Financial: contas a pagar (filtered by period) ---
+    const hoje = new Date().toISOString().slice(0, 10);
+    const contasNoPeriodo = await prisma.conta.findMany({
+      where: {
+        vencimento: { gte: dataInicio, lte: dataFim },
+      },
+    });
+    const contasPagas = contasNoPeriodo.filter((c) => c.situacao === "Pago");
+    const contasPendentes = contasNoPeriodo.filter((c) => c.situacao === "Pendente");
+    const contasVencidas = contasPendentes.filter((c) => c.vencimento <= hoje);
+
+    const despesasRealizadas = contasPagas.reduce((a, c) => a + c.valor, 0);
+    const despesasProjetadas = contasPendentes.reduce((a, c) => a + c.valor, 0);
+    const despesasVencidas = contasVencidas.reduce((a, c) => a + c.valor, 0);
+
+    // --- Category breakdown ---
+    const categoriaMap = new Map<string, { realizado: number; projetado: number }>();
+    for (const conta of contasNoPeriodo) {
+      const cat = conta.categoria || "Sem categoria";
+      const existing = categoriaMap.get(cat) || { realizado: 0, projetado: 0 };
+      if (conta.situacao === "Pago") {
+        existing.realizado += conta.valor;
+      } else {
+        existing.projetado += conta.valor;
+      }
+      categoriaMap.set(cat, existing);
+    }
+    const despesasPorCategoria = Array.from(categoriaMap.entries())
+      .map(([categoria, vals]) => ({
+        categoria,
+        realizado: vals.realizado,
+        projetado: vals.projetado,
+      }))
+      .sort((a, b) => (b.realizado + b.projetado) - (a.realizado + a.projetado));
 
     const financeiro = {
       receita: totalVendido,
       recebido: totalRecebido,
       aReceber: totalPendente,
-      despesas: totalContasPagas + totalContasPendentes,
-      despesasPagas: totalContasPagas,
-      despesasPendentes: totalContasPendentes,
-      despesasVencidas: totalContasVencidas,
-      lucroEstimado: totalVendido - (totalContasPagas + totalContasPendentes),
-      fluxoCaixa: totalRecebido - totalContasPagas,
+      despesas: despesasRealizadas + despesasProjetadas,
+      despesasPagas: despesasRealizadas,
+      despesasPendentes: despesasProjetadas,
+      despesasVencidas,
+      despesasRealizadas,
+      despesasProjetadas,
+      lucroEstimado: totalVendido - (despesasRealizadas + despesasProjetadas),
+      fluxoCaixa: totalRecebido - despesasRealizadas,
       contasPendentesQtd: contasPendentes.length,
       contasVencidasQtd: contasVencidas.length,
+      despesasPorCategoria,
     };
 
     // --- Variações ---
@@ -291,6 +326,7 @@ export async function GET(request: NextRequest) {
       dataInicio,
       dataFim,
       totalPedidos,
+      totalEntregues,
       totalVendido,
       totalRecebido,
       totalPendente,

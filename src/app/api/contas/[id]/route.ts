@@ -46,10 +46,10 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { fornecedorId, fornecedorNome, categoria, valor, vencimento, situacao } = body;
+    const { fornecedorId, fornecedorNome, categoria, categoriaId, valor, vencimento, situacao } = body;
     const conta = await prisma.conta.update({
       where: { id: Number(id) },
-      data: { fornecedorId, fornecedorNome, categoria, valor, vencimento, situacao },
+      data: { fornecedorId, fornecedorNome, categoria, categoriaId, valor, vencimento, situacao },
     });
 
     return NextResponse.json(conta);

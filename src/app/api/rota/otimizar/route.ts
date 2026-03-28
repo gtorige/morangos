@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "../../../../../auth";
+import { getGoogleRoutesApiKey } from "@/lib/config";
 
 interface Waypoint {
   address: string;
@@ -25,10 +26,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
     }
 
-    const apiKey = process.env.GOOGLE_ROUTES_API_KEY;
+    const apiKey = await getGoogleRoutesApiKey();
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Google Routes API key not configured" },
+        { error: "Google Routes API key não configurada. Acesse Configurações para adicionar." },
         { status: 500 }
       );
     }
@@ -85,9 +86,21 @@ export async function POST(request: NextRequest) {
 
     if (!res.ok) {
       const errorData = await res.json();
-      console.error("Google Routes API error:", errorData);
+      console.error("Google Routes API error:", JSON.stringify(errorData, null, 2));
+
+      // Check for geocoding errors and provide helpful message
+      const errorMessage = errorData?.error?.message || "";
+      const status = errorData?.error?.status || "";
+
+      let userMessage = "Erro na API do Google Routes.";
+      if (status === "INVALID_ARGUMENT" || errorMessage.includes("geocod")) {
+        userMessage = "Endereço não encontrado. Use endereços completos (rua, número, cidade) em vez de nomes de locais.";
+      } else if (status === "PERMISSION_DENIED") {
+        userMessage = "API Key sem permissão. Verifique se a Routes API está ativada no Google Cloud Console.";
+      }
+
       return NextResponse.json(
-        { error: "Google Routes API error", details: errorData },
+        { error: userMessage, details: errorData },
         { status: res.status }
       );
     }

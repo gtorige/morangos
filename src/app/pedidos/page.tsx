@@ -111,6 +111,24 @@ function formatDate(dateStr: string): string {
 }
 
 type StatusTab = "todos" | "concluidos" | "pendente_pgto" | "pendente_tudo";
+type SortField = "id" | "cliente" | "bairro" | "total" | "pgto" | "entrega" | "data";
+type SortDir = "asc" | "desc";
+
+// Helper: get Monday of the week containing `date`
+function getMonday(date: Date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  d.setDate(d.getDate() - ((day + 6) % 7));
+  return d;
+}
+
+function getSunday(monday: Date) {
+  const d = new Date(monday);
+  d.setDate(d.getDate() + 6);
+  return d;
+}
+
+function dateToStr(d: Date) { return d.toISOString().slice(0, 10); }
 
 export default function PedidosPage() {
   const router = useRouter();
@@ -119,6 +137,8 @@ export default function PedidosPage() {
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [tab, setTab] = useState<StatusTab>("todos");
+  const [sortField, setSortField] = useState<SortField>("data");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   // Auto-fetch when filters change
   useEffect(() => {
@@ -247,6 +267,20 @@ export default function PedidosPage() {
     }
   }
 
+  function toggleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDir(field === "data" ? "asc" : "asc");
+    }
+  }
+
+  function sortIndicator(field: SortField) {
+    if (sortField !== field) return "";
+    return sortDir === "asc" ? " ↑" : " ↓";
+  }
+
   const filteredByTab = pedidos.filter((p) => {
     switch (tab) {
       case "concluidos":
@@ -259,11 +293,17 @@ export default function PedidosPage() {
         return true;
     }
   }).sort((a, b) => {
-    // Pending tabs: oldest first (date asc). Others: newest first (date desc)
-    if (tab === "pendente_tudo" || tab === "pendente_pgto") {
-      return a.dataEntrega.localeCompare(b.dataEntrega);
+    const dir = sortDir === "asc" ? 1 : -1;
+    switch (sortField) {
+      case "id": return (a.id - b.id) * dir;
+      case "cliente": return (a.cliente?.nome || "").localeCompare(b.cliente?.nome || "") * dir;
+      case "bairro": return (a.cliente?.bairro || "").localeCompare(b.cliente?.bairro || "") * dir;
+      case "total": return (a.total - b.total) * dir;
+      case "pgto": return a.situacaoPagamento.localeCompare(b.situacaoPagamento) * dir;
+      case "entrega": return a.statusEntrega.localeCompare(b.statusEntrega) * dir;
+      case "data":
+      default: return a.dataEntrega.localeCompare(b.dataEntrega) * dir;
     }
-    return b.dataEntrega.localeCompare(a.dataEntrega);
   });
 
   const counts = {
@@ -322,14 +362,19 @@ export default function PedidosPage() {
         {[
           { label: "Hoje", fn: () => { const t = todayStr(); setFilters(f => ({ ...f, dataInicio: t, dataFim: t })) } },
           { label: "Semana", fn: () => {
-            const d = new Date(); const day = d.getDay();
-            const mon = new Date(d); mon.setDate(d.getDate() - ((day + 6) % 7));
-            const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-            setFilters(f => ({ ...f, dataInicio: mon.toISOString().slice(0,10), dataFim: sun.toISOString().slice(0,10) }));
+            const mon = getMonday(new Date());
+            const sun = getSunday(mon);
+            setFilters(f => ({ ...f, dataInicio: dateToStr(mon), dataFim: dateToStr(sun) }));
+          }},
+          { label: "Próx. Semana", fn: () => {
+            const mon = getMonday(new Date());
+            const nextMon = new Date(mon); nextMon.setDate(mon.getDate() + 7);
+            const nextSun = getSunday(nextMon);
+            setFilters(f => ({ ...f, dataInicio: dateToStr(nextMon), dataFim: dateToStr(nextSun) }));
           }},
           { label: "Mês", fn: () => {
             const d = new Date(); const y = d.getFullYear(); const m = d.getMonth();
-            setFilters(f => ({ ...f, dataInicio: new Date(y,m,1).toISOString().slice(0,10), dataFim: new Date(y,m+1,0).toISOString().slice(0,10) }));
+            setFilters(f => ({ ...f, dataInicio: dateToStr(new Date(y,m,1)), dataFim: dateToStr(new Date(y,m+1,0)) }));
           }},
           { label: "Todos", fn: () => { setFilters(f => ({ ...f, dataInicio: "", dataFim: "" })) } },
         ].map((s) => (
@@ -581,13 +626,13 @@ export default function PedidosPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>#</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead className="hidden lg:table-cell">Bairro</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead>Pgto</TableHead>
-                <TableHead>Entrega</TableHead>
-                <TableHead className="hidden md:table-cell">Data</TableHead>
+                <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("id")}>#{sortIndicator("id")}</TableHead>
+                <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("cliente")}>Cliente{sortIndicator("cliente")}</TableHead>
+                <TableHead className="hidden lg:table-cell cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("bairro")}>Bairro{sortIndicator("bairro")}</TableHead>
+                <TableHead className="text-right cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("total")}>Total{sortIndicator("total")}</TableHead>
+                <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("pgto")}>Pgto{sortIndicator("pgto")}</TableHead>
+                <TableHead className="cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("entrega")}>Entrega{sortIndicator("entrega")}</TableHead>
+                <TableHead className="hidden md:table-cell cursor-pointer select-none hover:text-foreground" onClick={() => toggleSort("data")}>Data{sortIndicator("data")}</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>

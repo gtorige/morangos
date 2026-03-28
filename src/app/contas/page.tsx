@@ -21,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Pencil, Trash2, Receipt, Store } from "lucide-react";
+import { Plus, Pencil, Trash2, Receipt, Store, Tag, Check } from "lucide-react";
 
 // ── Types ──
 
@@ -29,6 +29,7 @@ interface Conta {
   id: number;
   fornecedorNome: string;
   categoria: string;
+  categoriaId: number | null;
   valor: number;
   vencimento: string;
   situacao: string;
@@ -36,7 +37,7 @@ interface Conta {
 
 interface ContaForm {
   fornecedorNome: string;
-  categoria: string;
+  categoriaId: string;
   valor: string;
   vencimento: string;
   situacao: string;
@@ -48,11 +49,17 @@ interface Fornecedor {
   _count: { contas: number };
 }
 
-type Tab = "contas" | "fornecedores";
+interface Categoria {
+  id: number;
+  nome: string;
+  _count: { contas: number };
+}
+
+type Tab = "contas" | "fornecedores" | "categorias";
 
 const emptyContaForm: ContaForm = {
   fornecedorNome: "",
-  categoria: "",
+  categoriaId: "",
   valor: "",
   vencimento: "",
   situacao: "Pendente",
@@ -110,12 +117,20 @@ export default function ContasPage() {
   const [fornecedorDialogOpen, setFornecedorDialogOpen] = useState(false);
   const [fornecedorError, setFornecedorError] = useState("");
 
+  // Categorias state
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [categoriasLoading, setCategoriasLoading] = useState(true);
+  const [categoriaNome, setCategoriaNome] = useState("");
+  const [categoriaDialogOpen, setCategoriaDialogOpen] = useState(false);
+  const [categoriaError, setCategoriaError] = useState("");
+
   // Fornecedor names for autocomplete
   const fornecedorNames = fornecedores.map((f) => f.nome);
 
   useEffect(() => {
     fetchContas();
     fetchFornecedores();
+    fetchCategorias();
   }, []);
 
   // ── Contas CRUD ──
@@ -141,7 +156,7 @@ export default function ContasPage() {
   function openEditConta(item: Conta) {
     setContaForm({
       fornecedorNome: item.fornecedorNome,
-      categoria: item.categoria,
+      categoriaId: item.categoriaId ? String(item.categoriaId) : "",
       valor: String(item.valor),
       vencimento: item.vencimento,
       situacao: item.situacao,
@@ -152,9 +167,12 @@ export default function ContasPage() {
 
   async function handleContaSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const catId = contaForm.categoriaId ? Number(contaForm.categoriaId) : null;
+    const catNome = catId ? (categorias.find((c) => c.id === catId)?.nome ?? "") : "";
     const body = {
       fornecedorNome: contaForm.fornecedorNome,
-      categoria: contaForm.categoria,
+      categoria: catNome,
+      categoriaId: catId,
       valor: parseFloat(contaForm.valor),
       vencimento: contaForm.vencimento,
       situacao: contaForm.situacao,
@@ -181,6 +199,19 @@ export default function ContasPage() {
       fetchContas();
     } catch (e) {
       console.error("Erro ao excluir conta:", e);
+    }
+  }
+
+  async function handleMarkPago(id: number) {
+    try {
+      await fetch(`/api/contas/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ situacao: "Pago" }),
+      });
+      fetchContas();
+    } catch (e) {
+      console.error("Erro ao marcar como pago:", e);
     }
   }
 
@@ -247,12 +278,92 @@ export default function ContasPage() {
     }
   }
 
+  // ── Categorias CRUD ──
+
+  async function fetchCategorias() {
+    try {
+      setCategoriasLoading(true);
+      const res = await fetch("/api/categorias");
+      setCategorias(await res.json());
+    } catch (e) {
+      console.error("Erro ao buscar categorias:", e);
+    } finally {
+      setCategoriasLoading(false);
+    }
+  }
+
+  function openNewCategoria() {
+    setCategoriaNome("");
+    setCategoriaError("");
+    setCategoriaDialogOpen(true);
+  }
+
+  async function handleCategoriaSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setCategoriaError("");
+    try {
+      const res = await fetch("/api/categorias", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome: categoriaNome }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setCategoriaError(data.error || "Erro ao salvar");
+        return;
+      }
+      setCategoriaDialogOpen(false);
+      fetchCategorias();
+    } catch (e) {
+      console.error("Erro ao salvar categoria:", e);
+      setCategoriaError("Erro ao salvar categoria");
+    }
+  }
+
+  async function handleDeleteCategoria(id: number) {
+    if (!confirm("Deseja realmente excluir esta categoria?")) return;
+    try {
+      const res = await fetch(`/api/categorias/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Erro ao excluir");
+        return;
+      }
+      fetchCategorias();
+    } catch (e) {
+      console.error("Erro ao excluir categoria:", e);
+    }
+  }
+
+  // ── Helper: get categoria name for display ──
+
+  function getCategoriaNome(conta: Conta) {
+    if (conta.categoriaId) {
+      const cat = categorias.find((c) => c.id === conta.categoriaId);
+      if (cat) return cat.nome;
+    }
+    return conta.categoria || "";
+  }
+
   // ── Render ──
 
   const tabs: { key: Tab; label: string; icon: typeof Receipt }[] = [
     { key: "contas", label: "Contas", icon: Receipt },
     { key: "fornecedores", label: "Fornecedores", icon: Store },
+    { key: "categorias", label: "Categorias", icon: Tag },
   ];
+
+  function getAddButtonLabel() {
+    if (tab === "contas") return "Nova Conta";
+    if (tab === "fornecedores") return "Novo Fornecedor";
+    return "Nova Categoria";
+  }
+
+  function handleAddButton() {
+    if (tab === "contas") openNewConta();
+    else if (tab === "fornecedores") openNewFornecedor();
+    else openNewCategoria();
+  }
 
   return (
     <div className="space-y-6">
@@ -261,9 +372,9 @@ export default function ContasPage() {
           <Receipt className="size-5" />
           <h1 className="text-2xl font-semibold">Financeiro</h1>
         </div>
-        <Button onClick={tab === "contas" ? openNewConta : openNewFornecedor}>
+        <Button onClick={handleAddButton}>
           <Plus className="size-4" />
-          {tab === "contas" ? "Nova Conta" : "Novo Fornecedor"}
+          {getAddButtonLabel()}
         </Button>
       </div>
 
@@ -316,12 +427,17 @@ export default function ContasPage() {
                   contas.map((item) => (
                     <TableRow key={item.id} className={getRowClassName(item)}>
                       <TableCell className="font-medium">{item.fornecedorNome}</TableCell>
-                      <TableCell className="hidden sm:table-cell">{item.categoria}</TableCell>
+                      <TableCell className="hidden sm:table-cell">{getCategoriaNome(item)}</TableCell>
                       <TableCell>{formatPrice(item.valor)}</TableCell>
                       <TableCell className="hidden sm:table-cell">{formatDate(item.vencimento)}</TableCell>
                       <TableCell>{getSituacaoBadge(item)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {item.situacao === "Pendente" && (
+                            <Button variant="ghost" size="icon-sm" onClick={() => handleMarkPago(item.id)} title="Marcar como pago">
+                              <Check className="size-4 text-green-500" />
+                            </Button>
+                          )}
                           <Button variant="ghost" size="icon-sm" onClick={() => openEditConta(item)}><Pencil className="size-4" /></Button>
                           <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteConta(item.id)}><Trash2 className="size-4 text-destructive" /></Button>
                         </div>
@@ -349,7 +465,17 @@ export default function ContasPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="categoria">Categoria</Label>
-                  <Input id="categoria" value={contaForm.categoria} onChange={(e) => setContaForm({ ...contaForm, categoria: e.target.value })} />
+                  <select
+                    id="categoria"
+                    value={contaForm.categoriaId}
+                    onChange={(e) => setContaForm({ ...contaForm, categoriaId: e.target.value })}
+                    className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+                  >
+                    <option value="">Sem categoria</option>
+                    {categorias.map((c) => (
+                      <option key={c.id} value={c.id}>{c.nome}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="valor">Valor</Label>
@@ -428,6 +554,65 @@ export default function ContasPage() {
                 {fornecedorError && <p className="text-sm text-destructive">{fornecedorError}</p>}
                 <DialogFooter>
                   <Button type="submit">{fornecedorEditingId ? "Salvar" : "Criar"}</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
+
+      {/* ═══ CATEGORIAS TAB ═══ */}
+      {tab === "categorias" && (
+        <>
+          <div className="rounded-lg border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead className="text-center">Contas</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {categoriasLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">Carregando...</TableCell>
+                  </TableRow>
+                ) : categorias.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">Nenhuma categoria cadastrada</TableCell>
+                  </TableRow>
+                ) : (
+                  categorias.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell className="font-medium">{item.nome}</TableCell>
+                      <TableCell className="text-center"><Badge variant="outline">{item._count.contas}</Badge></TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteCategoria(item.id)}><Trash2 className="size-4 text-destructive" /></Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Categoria Dialog */}
+          <Dialog open={categoriaDialogOpen} onOpenChange={setCategoriaDialogOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Nova Categoria</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleCategoriaSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="categoriaNome">Nome</Label>
+                  <Input id="categoriaNome" value={categoriaNome} onChange={(e) => setCategoriaNome(e.target.value)} required autoFocus />
+                </div>
+                {categoriaError && <p className="text-sm text-destructive">{categoriaError}</p>}
+                <DialogFooter>
+                  <Button type="submit">Criar</Button>
                 </DialogFooter>
               </form>
             </DialogContent>

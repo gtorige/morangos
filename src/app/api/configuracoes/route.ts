@@ -20,6 +20,18 @@ export async function GET(request: NextRequest) {
     }
 
     const configs = await prisma.configuracao.findMany();
+
+    // Include env-based API keys as defaults if not in DB
+    const envDefaults: Record<string, string | undefined> = {
+      google_routes_api_key: process.env.GOOGLE_ROUTES_API_KEY,
+    };
+
+    for (const [key, envVal] of Object.entries(envDefaults)) {
+      if (envVal && !configs.find((c: { chave: string }) => c.chave === key)) {
+        configs.push({ id: 0, chave: key, valor: envVal });
+      }
+    }
+
     return NextResponse.json(configs);
   } catch (error) {
     console.error("Erro ao buscar configurações:", error);

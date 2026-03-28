@@ -22,6 +22,7 @@ import {
   Shield,
   LogOut,
   KeyRound,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +64,7 @@ const navItems = [
 
 const adminItems = [
   { href: "/admin/usuarios", label: "Usuários", icon: Shield },
+  { href: "/admin/configuracoes", label: "Configurações", icon: Settings },
 ];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {

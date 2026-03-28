@@ -12,10 +12,12 @@ model Cliente {
   id                  Int      @id @default(autoincrement())
   nome                String
   telefone            String   @default("")
+  cep                 String   @default("")
   rua                 String   @default("")
   numero              String   @default("")
   bairro              String   @default("")
   cidade              String   @default("")
+  enderecoAlternativo String   @default("") @map("endereco_alternativo")
   observacoes         String   @default("")
   pedidos             Pedido[]
   pedidosRecorrentes  PedidoRecorrente[]
@@ -109,17 +111,27 @@ model Fornecedor {
   @@map("fornecedores")
 }
 
+model Categoria {
+  id    Int    @id @default(autoincrement())
+  nome  String @unique
+  contas Conta[]
+  @@map("categorias")
+}
+
 model Conta {
   id            Int          @id @default(autoincrement())
   fornecedorId  Int?         @map("fornecedor_id")
   fornecedor    Fornecedor?  @relation(fields: [fornecedorId], references: [id])
   fornecedorNome String      @default("") @map("fornecedor_nome")
   categoria     String       @default("")
+  categoriaId   Int?         @map("categoria_id")
+  categoriaRef  Categoria?   @relation(fields: [categoriaId], references: [id])
   valor         Float
   vencimento    String
   situacao      String       @default("Pendente")
 
   @@index([fornecedorId])
+  @@index([categoriaId])
   @@map("contas")
 }
 
