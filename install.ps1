@@ -368,11 +368,10 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     # ============================================================
     Write-Host ""
     Write-Host "Criando arquivo de configuracao..." -ForegroundColor Yellow
-    $prevEA = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
-    & node.exe -e "const c=require('crypto');const fs=require('fs');fs.writeFileSync('.env','DATABASE_URL=\`"file:./dev.db\`"\nAUTH_SECRET='+c.randomBytes(32).toString('hex')+'\n');" 2>&1 | Out-Host
-    $nodeExit = $LASTEXITCODE
-    $ErrorActionPreference = $prevEA
-    if ($nodeExit -ne 0) { Show-Error "Falha ao criar arquivo .env." }
+    $authSecret = -join ((48..57) + (97..122) | Get-Random -Count 32 | ForEach-Object { [char]$_ })
+    $envContent = "DATABASE_URL=`"file:./dev.db`"`nAUTH_SECRET=$authSecret"
+    Set-Content -Path (Join-Path $morangosDir ".env") -Value $envContent -Encoding UTF8
+    if (-not (Test-Path (Join-Path $morangosDir ".env"))) { Show-Error "Falha ao criar arquivo .env." }
     Write-Host "Arquivo .env criado!" -ForegroundColor Green
 
     # ============================================================
@@ -405,9 +404,9 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     Write-Host '  - Google Maps Embed API - preview do mapa' -ForegroundColor DarkGray
     Write-Host '  - Google Maps URLs - abrir no Google Maps' -ForegroundColor DarkGray
     Write-Host ""
-    Write-Host "Voce precisara criar uma API key gratuita do Google." -ForegroundColor White
-    Write-Host "O plano gratuito da `$200 de credito por mes —" -ForegroundColor White
-    Write-Host "mais do que suficiente para uso pessoal." -ForegroundColor White
+    Write-Host 'Voce precisara criar uma API key gratuita do Google.' -ForegroundColor White
+    Write-Host 'O plano gratuito da 200 dolares de credito por mes.' -ForegroundColor White
+    Write-Host 'Mais do que suficiente para uso pessoal.' -ForegroundColor White
     Write-Host ""
     Write-Host "Abrindo o Google Cloud Console no navegador..." -ForegroundColor Yellow
     Start-Sleep -Seconds 2
@@ -441,14 +440,12 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     # ============================================================
     # STEP 9 — CRIAR iniciar.ps1
     # ============================================================
-    $iniciarContent = @"
-`$appDir = "$morangosDir"
-Set-Location `$appDir
-Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -Command", "Set-Location '`$appDir'; npm.cmd run dev" -WindowStyle Minimized
-Start-Sleep -Seconds 8
-Start-Process "http://localhost:3000"
-"@
-    Set-Content -Path (Join-Path $morangosDir "iniciar.ps1") -Value $iniciarContent -Encoding UTF8
+    $iniciarPath = Join-Path $morangosDir "iniciar.ps1"
+    $iniciarScript = 'Set-Location "' + $morangosDir + '"' + "`n"
+    $iniciarScript += 'Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -Command Set-Location ''' + $morangosDir + '''; npm.cmd run dev" -WindowStyle Minimized' + "`n"
+    $iniciarScript += 'Start-Sleep -Seconds 8' + "`n"
+    $iniciarScript += 'Start-Process http://localhost:3000' + "`n"
+    Set-Content -Path $iniciarPath -Value $iniciarScript -Encoding UTF8
 
     # ============================================================
     # STEP 10 — CRIAR ATALHO NA AREA DE TRABALHO
