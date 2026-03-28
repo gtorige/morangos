@@ -32,7 +32,10 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import pkg from "../../package.json";
 import "./globals.css";
+
+const appVersion = pkg.version;
 
 const inter = Inter({
   variable: "--font-inter",
@@ -233,6 +236,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           </div>
         </>
       )}
+      <p className="px-4 py-2 text-[10px] text-muted-foreground/40">v{appVersion}</p>
     </div>
   );
 }
