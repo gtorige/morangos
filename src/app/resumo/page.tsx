@@ -60,8 +60,8 @@ interface Resumo {
 // ── Helpers ──
 
 function fmt(v: number) { return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) }
-function fmtDate(s: string) { const [y,m,d]=s.split("-"); return `${d}/${m}/${y}` }
-function fmtShort(s: string) { const [,m,d]=s.split("-"); return `${d}/${m}` }
+function fmtDate(s: string) { if (!s) return ""; const [y,m,d]=s.split("-"); return `${d}/${m}/${y}` }
+function fmtShort(s: string) { if (!s) return ""; const [,m,d]=s.split("-"); return `${d}/${m}` }
 function todayStr() { return new Date().toISOString().slice(0, 10) }
 
 type Periodo = "dia" | "semana" | "mes" | "ano" | "custom";
