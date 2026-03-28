@@ -155,8 +155,7 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
                 Write-Host "Baixando atualizacao..." -ForegroundColor Yellow
                 $env:GIT_REDIRECT_STDERR = '2>&1'
                 $prevEP = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
-                & git fetch origin 2>&1 | Out-Null
-                & git reset --hard origin/main 2>&1 | Out-Null
+                & git pull 2>&1 | Out-Host
                 $gitExit = $LASTEXITCODE
                 $ErrorActionPreference = $prevEP; $env:GIT_REDIRECT_STDERR = $null
                 if ($gitExit -ne 0) { throw "git pull failed" }
