@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
     const totalPedidos = pedidos.length;
     const totalEntregues = entregues.length;
     const totalVendido = entregues.reduce((acc, p) => acc + p.total, 0);
-    const totalRecebido = entregues.reduce((acc, p) => acc + p.valorPago, 0);
+    const totalRecebido = entregues.filter((p) => p.situacaoPagamento === "Pago").reduce((acc, p) => acc + p.total, 0);
     const totalPendente = totalVendido - totalRecebido;
     const totalTaxaEntrega = entregues.reduce(
       (acc, p) => acc + p.taxaEntrega,
@@ -84,10 +84,7 @@ export async function GET(request: NextRequest) {
     );
     const totalPedidosAnterior = pedidosAnterior.length;
     const totalEntreguesAnterior = entreguesAnterior.length;
-    const totalRecebidoAnterior = entreguesAnterior.reduce(
-      (acc, p) => acc + p.valorPago,
-      0
-    );
+    const totalRecebidoAnterior = entreguesAnterior.filter((p) => p.situacaoPagamento === "Pago").reduce((acc, p) => acc + p.total, 0);
     const ticketMedioAnterior =
       totalEntreguesAnterior > 0
         ? totalVendidoAnterior / totalEntreguesAnterior
