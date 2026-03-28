@@ -181,21 +181,20 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
                 Write-Host "Aplicando migracoes do banco..." -ForegroundColor Yellow
                 & npx.cmd prisma generate 2>&1 | Out-Host
 
-                # Marcar migracoes que foram aplicadas via db push (versoes anteriores)
-                # sem errar se ja estiverem marcadas
+                # db push aplica o schema atual de forma idempotente (adiciona colunas
+                # que faltam sem apagar dados, independente do historico de migracoes)
                 $prevEA2 = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
-                & npx.cmd prisma migrate resolve --applied "20260328050000_add_installments_subcategories" 2>&1 | Out-Null
+                & npx.cmd prisma db push --skip-generate --accept-data-loss 2>&1 | Out-Host
+                $dbPushExit = $LASTEXITCODE
                 $ErrorActionPreference = $prevEA2
-
-                & npx.cmd prisma migrate deploy 2>&1 | Out-Host
-                if ($LASTEXITCODE -ne 0) {
-                    # Migracao falhou — restaurar backup
-                    Write-Host "Erro na migracao! Restaurando backup..." -ForegroundColor Red
+                if ($dbPushExit -ne 0) {
+                    # Falha no schema — restaurar backup
+                    Write-Host "Erro ao atualizar banco! Restaurando backup..." -ForegroundColor Red
                     if (Test-Path $dbBackupPath) {
                         Copy-Item $dbBackupPath $dbPath -Force
                         Write-Host "Banco restaurado do backup." -ForegroundColor Yellow
                     }
-                    throw "migration failed"
+                    throw "db push failed"
                 }
 
                 # Recriar marcador
