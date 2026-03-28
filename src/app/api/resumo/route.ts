@@ -214,6 +214,7 @@ export async function GET(request: NextRequest) {
     // --- Monthly breakdown (for year view) ---
     const vendasPorMes: { mes: number; mesNome: string; total: number; pedidos: number }[] = [];
     const vendasPorMesAnterior: { mes: number; mesNome: string; total: number; pedidos: number }[] = [];
+    const vendasPorMesTodos: { mes: number; mesNome: string; total: number; pedidos: number }[] = [];
     const mesesNomes = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
     if (periodo === "ano") {
@@ -231,6 +232,23 @@ export async function GET(request: NextRequest) {
       for (let m = 0; m < 12; m++) {
         const vals = mesMap.get(m) || { total: 0, pedidos: 0 };
         vendasPorMes.push({ mes: m, mesNome: mesesNomes[m], ...vals });
+      }
+
+      // All orders per month (including pending - "projetado")
+      const mesMapTodos = new Map<number, { total: number; pedidos: number }>();
+      for (const pedido of pedidos) {
+        const month = parseInt(pedido.dataEntrega.split("-")[1]) - 1;
+        const existing = mesMapTodos.get(month);
+        if (existing) {
+          existing.total += pedido.total;
+          existing.pedidos += 1;
+        } else {
+          mesMapTodos.set(month, { total: pedido.total, pedidos: 1 });
+        }
+      }
+      for (let m = 0; m < 12; m++) {
+        const vals = mesMapTodos.get(m) || { total: 0, pedidos: 0 };
+        vendasPorMesTodos.push({ mes: m, mesNome: mesesNomes[m], ...vals });
       }
 
       // Previous year monthly (delivered only)
@@ -286,6 +304,23 @@ export async function GET(request: NextRequest) {
       }))
       .sort((a, b) => (b.realizado + b.projetado) - (a.realizado + a.projetado));
 
+    // --- Despesas por mês (only in "ano" period) ---
+    const despesasPorMes: { mes: number; mesNome: string; pagas: number; pendentes: number }[] = [];
+    if (periodo === "ano") {
+      const desMesMap = new Map<number, { pagas: number; pendentes: number }>();
+      for (const conta of contasNoPeriodo) {
+        const month = parseInt(conta.vencimento.split("-")[1]) - 1;
+        const existing = desMesMap.get(month) || { pagas: 0, pendentes: 0 };
+        if (conta.situacao === "Pago") existing.pagas += conta.valor;
+        else existing.pendentes += conta.valor;
+        desMesMap.set(month, existing);
+      }
+      for (let m = 0; m < 12; m++) {
+        const vals = desMesMap.get(m) || { pagas: 0, pendentes: 0 };
+        despesasPorMes.push({ mes: m, mesNome: mesesNomes[m], ...vals });
+      }
+    }
+
     const financeiro = {
       receita: totalVendido,
       recebido: totalRecebido,
@@ -301,6 +336,7 @@ export async function GET(request: NextRequest) {
       contasPendentesQtd: contasPendentes.length,
       contasVencidasQtd: contasVencidas.length,
       despesasPorCategoria,
+      despesasPorMes,
     };
 
     // --- Variações ---
@@ -352,6 +388,7 @@ export async function GET(request: NextRequest) {
       vendasPorDia,
       vendasPorMes,
       vendasPorMesAnterior,
+      vendasPorMesTodos,
       financeiro,
     });
   } catch (error) {

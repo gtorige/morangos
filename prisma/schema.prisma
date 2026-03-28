@@ -114,27 +114,44 @@ model Fornecedor {
 }
 
 model Categoria {
-  id    Int    @id @default(autoincrement())
-  nome  String @unique
-  contas Conta[]
+  id            Int           @id @default(autoincrement())
+  nome          String        @unique
+  contas        Conta[]
+  subcategorias Subcategoria[]
   @@map("categorias")
 }
 
+model Subcategoria {
+  id          Int       @id @default(autoincrement())
+  nome        String
+  categoriaId Int       @map("categoria_id")
+  categoria   Categoria @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+  contas      Conta[]
+  @@unique([nome, categoriaId])
+  @@map("subcategorias")
+}
+
 model Conta {
-  id            Int          @id @default(autoincrement())
-  fornecedorId  Int?         @map("fornecedor_id")
-  fornecedor    Fornecedor?  @relation(fields: [fornecedorId], references: [id])
-  fornecedorNome String      @default("") @map("fornecedor_nome")
-  categoria     String       @default("")
-  categoriaId   Int?         @map("categoria_id")
-  categoriaRef  Categoria?   @relation(fields: [categoriaId], references: [id])
-  subcategoria  String       @default("") @map("subcategoria")
-  valor         Float
-  vencimento    String
-  situacao      String       @default("Pendente")
+  id              Int           @id @default(autoincrement())
+  fornecedorId    Int?          @map("fornecedor_id")
+  fornecedor      Fornecedor?   @relation(fields: [fornecedorId], references: [id])
+  fornecedorNome  String        @default("") @map("fornecedor_nome")
+  categoria       String        @default("")
+  categoriaId     Int?          @map("categoria_id")
+  categoriaRef    Categoria?    @relation(fields: [categoriaId], references: [id])
+  subcategoriaId  Int?          @map("subcategoria_id")
+  subcategoriaRef Subcategoria? @relation(fields: [subcategoriaId], references: [id])
+  tipoFinanceiro  String        @default("") @map("tipo_financeiro")
+  valor           Float
+  vencimento      String
+  situacao        String        @default("Pendente")
+  parcelas        Int           @default(1)  @map("parcelas")
+  parcelaNumero   Int           @default(1)  @map("parcela_numero")
+  parcelaGrupoId  Int?          @map("parcela_grupo_id")
 
   @@index([fornecedorId])
   @@index([categoriaId])
+  @@index([subcategoriaId])
   @@map("contas")
 }
 

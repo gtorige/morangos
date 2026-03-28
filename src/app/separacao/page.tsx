@@ -32,12 +32,14 @@ interface Detalhe {
   pedidoId: number;
   cliente: string;
   bairro: string;
+  dataEntrega: string;
   statusEntrega: string;
   itens: DetalheItem[];
 }
 
 interface Separacao {
   data: string;
+  dataFim?: string;
   totalPedidos: number;
   produtos: ProdutoResumo[];
   detalhes: Detalhe[];
@@ -47,7 +49,27 @@ function todayString() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function weekRange(): { inicio: string; fim: string } {
+  const d = new Date();
+  const dow = d.getDay();
+  const diffMon = dow === 0 ? -6 : 1 - dow;
+  const mon = new Date(d);
+  mon.setDate(d.getDate() + diffMon);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  return {
+    inicio: mon.toISOString().slice(0, 10),
+    fim: sun.toISOString().slice(0, 10),
+  };
+}
+
+function formatDate(dateStr: string) {
+  const [y, m, day] = dateStr.split("-");
+  return `${day}/${m}/${y}`;
+}
+
 export default function SeparacaoPage() {
+  const [modo, setModo] = useState<"dia" | "semana">("dia");
   const [data, setData] = useState(todayString());
   const [separacao, setSeparacao] = useState<Separacao | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,12 +78,19 @@ export default function SeparacaoPage() {
   useEffect(() => {
     fetchSeparacao();
     setCheckedItems(new Set());
-  }, [data]);
+  }, [data, modo]);
 
   async function fetchSeparacao() {
     try {
       setLoading(true);
-      const res = await fetch(`/api/separacao?data=${data}`);
+      let url: string;
+      if (modo === "semana") {
+        const { inicio, fim } = weekRange();
+        url = `/api/separacao?dataInicio=${inicio}&dataFim=${fim}`;
+      } else {
+        url = `/api/separacao?data=${data}`;
+      }
+      const res = await fetch(url);
       const json = await res.json();
       setSeparacao(json);
     } catch (error) {
@@ -103,21 +132,49 @@ export default function SeparacaoPage() {
         </Button>
       </div>
 
-      <div className="max-w-xs space-y-2 print:hidden">
-        <Label htmlFor="data">Data de Entrega</Label>
-        <Input
-          id="data"
-          type="date"
-          value={data}
-          onChange={(e) => setData(e.target.value)}
-        />
+      <div className="flex flex-wrap items-end gap-3 print:hidden">
+        {/* Mode toggle */}
+        <div className="flex rounded-lg border border-border overflow-hidden">
+          <button
+            onClick={() => setModo("dia")}
+            className={`px-3 py-1.5 text-xs font-medium transition-colors ${modo === "dia" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            Hoje
+          </button>
+          <button
+            onClick={() => setModo("semana")}
+            className={`px-3 py-1.5 text-xs font-medium border-l border-border transition-colors ${modo === "semana" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            Semana
+          </button>
+        </div>
+        {modo === "dia" && (
+          <div className="space-y-1">
+            <Label htmlFor="data" className="text-xs">Data de Entrega</Label>
+            <Input
+              id="data"
+              type="date"
+              value={data}
+              onChange={(e) => setData(e.target.value)}
+              className="w-40 h-8 text-sm"
+            />
+          </div>
+        )}
+        {modo === "semana" && (() => {
+          const { inicio, fim } = weekRange();
+          return (
+            <span className="text-sm text-muted-foreground">
+              {formatDate(inicio)} – {formatDate(fim)}
+            </span>
+          );
+        })()}
       </div>
 
       {/* Print header */}
       <div className="hidden print:block text-center mb-4">
         <h1 className="text-xl font-bold">
           Lista de Separação -{" "}
-          {data.split("-").reverse().join("/")}
+          {modo === "semana" ? (() => { const { inicio, fim } = weekRange(); return `${formatDate(inicio)} a ${formatDate(fim)}`; })() : data.split("-").reverse().join("/")}
         </h1>
       </div>
 
@@ -217,31 +274,49 @@ export default function SeparacaoPage() {
               <Users className="size-5" />
               Detalhe por Cliente
             </h2>
-            <div className="grid gap-3 md:grid-cols-2">
-              {separacao.detalhes.map((d) => {
-                const key = `ped-${d.pedidoId}`;
-                const checked = checkedItems.has(key);
-                return (
-                  <Card
-                    key={d.pedidoId}
-                    className={`cursor-pointer transition-all print:break-inside-avoid ${
-                      checked
-                        ? "border-green-400 bg-green-50 dark:bg-green-950/20 opacity-60"
-                        : ""
-                    }`}
-                    onClick={() => toggleCheck(key)}
-                  >
-                    <CardHeader className="pb-2">
-                      <CardTitle className="flex items-center justify-between text-sm">
-                        <span className={checked ? "line-through" : ""}>
-                          {d.cliente}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {d.bairro && (
-                            <Badge variant="outline" className="text-xs">
-                              {d.bairro}
-                            </Badge>
-                          )}
+            <div className="rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12 print:hidden">OK</TableHead>
+                    {modo === "semana" && <TableHead className="w-24">Data</TableHead>}
+                    <TableHead>Cliente</TableHead>
+                    <TableHead className="hidden sm:table-cell">Bairro</TableHead>
+                    <TableHead>Itens</TableHead>
+                    <TableHead className="hidden sm:table-cell">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {separacao.detalhes.map((d) => {
+                    const key = `ped-${d.pedidoId}`;
+                    const checked = checkedItems.has(key);
+                    return (
+                      <TableRow
+                        key={d.pedidoId}
+                        className={`cursor-pointer transition-colors ${checked ? "opacity-50 line-through bg-green-500/10" : "hover:bg-accent/50"}`}
+                        onClick={() => toggleCheck(key)}
+                      >
+                        <TableCell className="print:hidden" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleCheck(key)}
+                            className="size-4 accent-green-600 cursor-pointer"
+                          />
+                        </TableCell>
+                        {modo === "semana" && <TableCell className="text-xs text-muted-foreground">{formatDate(d.dataEntrega)}</TableCell>}
+                        <TableCell className="font-medium">{d.cliente}</TableCell>
+                        <TableCell className="hidden sm:table-cell text-muted-foreground text-sm">{d.bairro}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-0.5">
+                            {d.itens.map((item, idx) => (
+                              <span key={idx} className="text-sm">
+                                {item.produto} <span className="font-semibold">x{item.quantidade}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell className="hidden sm:table-cell">
                           <Badge
                             className={
                               d.statusEntrega === "Entregue"
@@ -253,29 +328,12 @@ export default function SeparacaoPage() {
                           >
                             {d.statusEntrega}
                           </Badge>
-                        </div>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ul className="space-y-1">
-                        {d.itens.map((item, idx) => (
-                          <li
-                            key={idx}
-                            className={`flex justify-between text-sm ${
-                              checked ? "line-through" : ""
-                            }`}
-                          >
-                            <span>{item.produto}</span>
-                            <span className="font-semibold">
-                              x{item.quantidade}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </div>
           </div>
         </>

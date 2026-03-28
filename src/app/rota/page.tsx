@@ -508,7 +508,10 @@ export default function RotaPage() {
       {/* Data */}
       <div className="space-y-1">
         <Label htmlFor="data" className="text-xs">Data</Label>
-        <Input id="data" type="date" value={data} onChange={(e) => setData(e.target.value)} className="w-full sm:w-44 h-8 text-sm" />
+        <div className="flex gap-1.5 items-center">
+          <Input id="data" type="date" value={data} onChange={(e) => setData(e.target.value)} className="w-full sm:w-44 h-8 text-sm" />
+          <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={() => setData(todayString())}>Hoje</Button>
+        </div>
       </div>
 
       {/* Warning if no address configured */}

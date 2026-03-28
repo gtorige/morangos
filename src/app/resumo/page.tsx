@@ -42,6 +42,7 @@ interface Financeiro {
   lucroEstimado: number; fluxoCaixa: number;
   contasPendentesQtd: number; contasVencidasQtd: number;
   despesasPorCategoria: DespesaCategoria[];
+  despesasPorMes: { mes: number; mesNome: string; pagas: number; pendentes: number }[];
 }
 
 interface Resumo {
@@ -52,7 +53,7 @@ interface Resumo {
   vendasPorProduto: VendaProduto[]; topClientes: TopCliente[];
   vendasPorBairro: VendaBairro[]; vendasPorPagamento: VendaPagamento[];
   statusEntregas: Record<string, number>;
-  vendasPorDia: VendaDia[]; vendasPorMes: VendaMes[]; vendasPorMesAnterior: VendaMes[];
+  vendasPorDia: VendaDia[]; vendasPorMes: VendaMes[]; vendasPorMesAnterior: VendaMes[]; vendasPorMesTodos: VendaMes[];
   financeiro: Financeiro;
 }
 
@@ -281,29 +282,44 @@ function GeralTab({ resumo, periodo, periodoLabels, isAno, viewMode }: { resumo:
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Calendar className="size-4" />
-              Comparativo Mensal — {resumo.dataInicio.slice(0, 4)} vs {resumo.comparativo.dataInicioAnterior.slice(0, 4)}
+              Mês a Mês — {resumo.dataInicio.slice(0, 4)}
+              <span className="text-xs text-muted-foreground font-normal">vs {resumo.comparativo.dataInicioAnterior.slice(0, 4)}</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {resumo.vendasPorMes.map((mes, idx) => {
-                const ant = resumo.vendasPorMesAnterior[idx];
-                const mx = Math.max(...resumo.vendasPorMes.map(m => m.total), ...resumo.vendasPorMesAnterior.map(m => m.total), 1);
-                return (
-                  <div key={mes.mes} className="space-y-0.5">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground w-8 shrink-0">{mes.mesNome}</span>
-                      <div className="flex-1 space-y-0.5">
-                        <div className="flex items-center gap-2"><div className="flex-1"><Bar value={mes.total} max={mx} color="bg-primary" /></div><span className="text-xs font-medium w-20 text-right">{fmt(mes.total)}</span></div>
-                        {ant && ant.total > 0 && <div className="flex items-center gap-2"><div className="flex-1"><Bar value={ant.total} max={mx} color="bg-muted-foreground/30" /></div><span className="text-xs text-muted-foreground w-20 text-right">{fmt(ant.total)}</span></div>}
+              {(() => {
+                const dadosAno = viewMode === "projetado" ? resumo.vendasPorMesTodos : resumo.vendasPorMes;
+                const mx = Math.max(...dadosAno.map(m => m.total), ...resumo.vendasPorMesAnterior.map(m => m.total), 1);
+                return dadosAno.map((mes, idx) => {
+                  const ant = resumo.vendasPorMesAnterior[idx];
+                  const real = resumo.vendasPorMes[idx];
+                  return (
+                    <div key={mes.mes} className="space-y-0.5">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-muted-foreground w-8 shrink-0">{mes.mesNome}</span>
+                        <div className="flex-1 space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1"><Bar value={mes.total} max={mx} color="bg-primary" /></div>
+                            <span className="text-xs font-medium w-20 text-right">{fmt(mes.total)}</span>
+                          </div>
+                          {viewMode === "projetado" && real && real.total < mes.total && (
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1"><Bar value={real.total} max={mx} color="bg-teal-500" /></div>
+                              <span className="text-xs text-teal-500 w-20 text-right">{fmt(real.total)}</span>
+                            </div>
+                          )}
+                          {ant && ant.total > 0 && <div className="flex items-center gap-2"><div className="flex-1"><Bar value={ant.total} max={mx} color="bg-muted-foreground/30" /></div><span className="text-xs text-muted-foreground w-20 text-right">{fmt(ant.total)}</span></div>}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
             <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-full bg-primary" />{resumo.dataInicio.slice(0, 4)}</div>
+              <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-full bg-primary" />{viewMode === "projetado" ? "Total (c/ pendentes)" : "Realizado"} {resumo.dataInicio.slice(0, 4)}</div>
+              {viewMode === "projetado" && <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-full bg-teal-500" />Entregue</div>}
               <div className="flex items-center gap-1.5"><div className="w-3 h-2 rounded-full bg-muted-foreground/30" />{resumo.comparativo.dataInicioAnterior.slice(0, 4)}</div>
             </div>
           </CardContent>
@@ -578,6 +594,45 @@ function FinanceiroTab({ resumo, periodo, periodoLabels, viewMode }: { resumo: R
                 {!soRealizado && <span className="text-right">{fmt(f.despesas)}</span>}
               </div>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Despesas por mês (only in "ano" period) */}
+      {periodo === "ano" && f.despesasPorMes && f.despesasPorMes.length > 0 && f.despesasPorMes.some(d => d.pagas + d.pendentes > 0) && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Receipt className="size-4" />
+              Despesas Mês a Mês — {resumo.dataInicio.slice(0, 4)}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const maxD = Math.max(...f.despesasPorMes.map(d => d.pagas + d.pendentes), 1);
+              return (
+                <div className="space-y-2">
+                  {f.despesasPorMes.filter(d => d.pagas + d.pendentes > 0).map((d) => (
+                    <div key={d.mes} className="space-y-0.5">
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>{d.mesNome}</span>
+                        <span>{fmt(d.pagas + (!soRealizado ? d.pendentes : 0))}</span>
+                      </div>
+                      <div className="flex h-4 w-full rounded overflow-hidden bg-muted/30">
+                        <div className="bg-red-500/70" style={{ width: `${(d.pagas / maxD) * 100}%` }} />
+                        {!soRealizado && d.pendentes > 0 && (
+                          <div className="bg-yellow-500/50" style={{ width: `${(d.pendentes / maxD) * 100}%` }} />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex gap-4 text-xs text-muted-foreground pt-1">
+                    <span className="flex items-center gap-1"><span className="inline-block size-2 rounded-sm bg-red-500/70" />Pagas</span>
+                    {!soRealizado && <span className="flex items-center gap-1"><span className="inline-block size-2 rounded-sm bg-yellow-500/50" />Pendentes</span>}
+                  </div>
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
       )}

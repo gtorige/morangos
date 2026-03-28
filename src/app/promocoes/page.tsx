@@ -453,7 +453,7 @@ export default function PromocoesPage() {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="precoPromocionalCasada">Preço promocional do produto principal</Label>
+                  <Label htmlFor="precoPromocionalCasada">Preço promocional do produto parceiro</Label>
                   <Input
                     id="precoPromocionalCasada"
                     type="number"

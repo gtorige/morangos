@@ -30,12 +30,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { fornecedorId, fornecedorNome, categoria, categoriaId, subcategoria, valor, vencimento, situacao } = body;
+    const { fornecedorId, fornecedorNome, categoria, categoriaId, subcategoriaId, tipoFinanceiro, valor, vencimento, situacao, parcelas, parcelaNumero, parcelaGrupoId } = body;
     if (!fornecedorNome && (valor === undefined || valor === null)) {
       return NextResponse.json({ error: "Fornecedor ou valor é obrigatório" }, { status: 400 });
     }
     const conta = await prisma.conta.create({
-      data: { fornecedorId, fornecedorNome, categoria, categoriaId, subcategoria: subcategoria ?? "", valor, vencimento, situacao },
+      data: { fornecedorId, fornecedorNome, categoria, categoriaId, subcategoriaId: subcategoriaId ?? null, tipoFinanceiro: tipoFinanceiro ?? "", valor, vencimento, situacao, parcelas: parcelas ?? 1, parcelaNumero: parcelaNumero ?? 1, parcelaGrupoId: parcelaGrupoId ?? null },
     });
     return NextResponse.json(conta, { status: 201 });
   } catch (error) {

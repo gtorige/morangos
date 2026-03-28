@@ -10,14 +10,14 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const data =
-      searchParams.get("data") || new Date().toISOString().slice(0, 10);
+    const data = searchParams.get("data") || new Date().toISOString().slice(0, 10);
+    const dataInicio = searchParams.get("dataInicio");
+    const dataFim = searchParams.get("dataFim");
 
     const pedidos = await prisma.pedido.findMany({
-      where: {
-        dataEntrega: data,
-        statusEntrega: { not: "Cancelado" },
-      },
+      where: dataInicio && dataFim
+        ? { dataEntrega: { gte: dataInicio, lte: dataFim }, statusEntrega: { not: "Cancelado" } }
+        : { dataEntrega: data, statusEntrega: { not: "Cancelado" } },
       include: {
         cliente: true,
         itens: {
@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
       pedidoId: p.id,
       cliente: p.cliente.nome,
       bairro: p.cliente.bairro,
+      dataEntrega: p.dataEntrega,
       statusEntrega: p.statusEntrega,
       itens: p.itens.map((i) => ({
         produto: i.produto.nome,
@@ -65,7 +66,8 @@ export async function GET(request: NextRequest) {
     }));
 
     return NextResponse.json({
-      data,
+      data: dataInicio && dataFim ? dataInicio : data,
+      dataFim: dataInicio && dataFim ? dataFim : undefined,
       totalPedidos: pedidos.length,
       produtos,
       detalhes,

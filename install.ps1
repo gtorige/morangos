@@ -181,6 +181,13 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
 
                 Write-Host "Aplicando migracoes do banco..." -ForegroundColor Yellow
                 & npx.cmd prisma generate 2>&1 | Out-Host
+
+                # Marcar migracoes que foram aplicadas via db push (versoes anteriores)
+                # sem errar se ja estiverem marcadas
+                $prevEA2 = $ErrorActionPreference; $ErrorActionPreference = "SilentlyContinue"
+                & npx.cmd prisma migrate resolve --applied "20260328050000_add_installments_subcategories" 2>&1 | Out-Null
+                $ErrorActionPreference = $prevEA2
+
                 & npx.cmd prisma migrate deploy 2>&1 | Out-Host
                 if ($LASTEXITCODE -ne 0) {
                     # Migracao falhou — restaurar backup

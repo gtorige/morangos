@@ -297,7 +297,7 @@ export default function NovoPedidoPage() {
   }
 
   function handleRemoveItem(index: number) {
-    setItens(itens.filter((_, i) => i !== index));
+    setItens(applyCompradaCasadaDiscounts(itens.filter((_, i) => i !== index)));
   }
 
   function handleItemChange(
@@ -324,6 +324,17 @@ export default function NovoPedidoPage() {
       }
     } else if (field === "quantidade") {
       item.quantidade = value;
+      // For quantidade_minima promos, update the displayed unit price dynamically
+      if (!item.precoManual) {
+        const promo = getPromocaoForProduto(item.produtoId);
+        if (promo && promo.tipo === "quantidade_minima" && promo.quantidadeMinima && promo.precoPromocional) {
+          const qty = parseFloat(value) || 0;
+          const produto = produtos.find((p) => String(p.id) === item.produtoId);
+          item.precoUnitario = qty >= promo.quantidadeMinima
+            ? promo.precoPromocional
+            : (produto?.preco ?? item.precoUnitario);
+        }
+      }
       const { subtotal } = calcSubtotalFor(item);
       item.subtotal = subtotal;
     } else if (field === "precoUnitario") {
@@ -334,11 +345,38 @@ export default function NovoPedidoPage() {
     }
 
     updated[index] = item;
-    setItens(updated);
+    setItens(applyCompradaCasadaDiscounts(updated));
   }
 
   function calcSubtotalFor(item: ItemPedido): { subtotal: number; qtdCobrada: number | null } {
     return calcSubtotal(item);
+  }
+
+  // Apply compra_casada discounts to partner products when primary is in order
+  function applyCompradaCasadaDiscounts(items: ItemPedido[]): ItemPedido[] {
+    const produtoIdSet = new Set(items.map((i) => i.produtoId));
+    return items.map((item) => {
+      if (item.precoManual) return item;
+      const casadaPromo = promocoes.find(
+        (p) => p.tipo === "compra_casada" && p.produtoId2 !== null && String(p.produtoId2) === item.produtoId
+      );
+      if (!casadaPromo) return item;
+      const primaryInOrder = produtoIdSet.has(String(casadaPromo.produtoId));
+      const qty = parseFloat(item.quantidade) || 0;
+      if (primaryInOrder) {
+        const newPrice = casadaPromo.precoPromocional;
+        return { ...item, precoUnitario: newPrice, subtotal: qty * newPrice };
+      } else {
+        // Primary removed — reset to base price
+        const produto = produtos.find((p) => String(p.id) === item.produtoId);
+        if (!produto) return item;
+        const regularPromo = promocoes.find(
+          (p) => String(p.produtoId) === item.produtoId && (p.tipo || "desconto") === "desconto" && p.precoPromocional
+        );
+        const basePrice = regularPromo ? regularPromo.precoPromocional : produto.preco;
+        return { ...item, precoUnitario: basePrice, subtotal: qty * basePrice };
+      }
+    });
   }
 
   const subtotalItens = itens.reduce((acc, item) => {
@@ -622,6 +660,11 @@ export default function NovoPedidoPage() {
                   const isLevePromo = promo && promo.tipo === "leve_x_pague_y";
                   const isQtdMinPromo = promo && promo.tipo === "quantidade_minima";
                   const isCasadaPromo = promo && promo.tipo === "compra_casada";
+                  // Partner detection: this item is produtoId2 of a compra_casada promo
+                  const casadaPartnerPromo = promocoes.find(
+                    (p) => p.tipo === "compra_casada" && p.produtoId2 !== null && String(p.produtoId2) === item.produtoId
+                  );
+                  const isCasadaPartnerActive = casadaPartnerPromo && itens.some((i) => String(casadaPartnerPromo.produtoId) === i.produtoId);
 
                   return (
                     <div key={index} className="space-y-1">
@@ -779,8 +822,13 @@ export default function NovoPedidoPage() {
                           </Badge>
                         )}
                         {isCasadaPromo && (
+                          <Badge className="bg-orange-600/60 text-white text-xs">
+                            Compra casada
+                          </Badge>
+                        )}
+                        {isCasadaPartnerActive && casadaPartnerPromo && (
                           <Badge className="bg-orange-600 text-white text-xs">
-                            Compra casada: {formatPrice(promo.precoPromocional)}
+                            Compra casada: {formatPrice(casadaPartnerPromo.precoPromocional)}
                           </Badge>
                         )}
                         {qtdCobrada !== null && (

@@ -255,16 +255,15 @@ export async function POST(request: NextRequest) {
     );
 
     // Second pass: apply "compra_casada" (bundle) promotions
-    // A bundle promotion on product A applies its precoPromocional when product B is also in the order
+    // When product A (produtoId) is in the order, product B (produtoId2) gets precoPromocional
     const produtoIdSet = new Set(produtoIds);
     for (const promocao of allPromocoes) {
       if (promocao.tipo !== "compra_casada" || !promocao.produtoId2) continue;
-      if (!produtoIdSet.has(promocao.produtoId2)) continue; // partner not in order
+      if (!produtoIdSet.has(promocao.produtoId)) continue; // primary not in order
       const targetItem = itensProcessados.find(
-        (i: { produtoId: number }) => i.produtoId === promocao.produtoId
+        (i: { produtoId: number }) => i.produtoId === promocao.produtoId2
       );
       if (!targetItem) continue;
-      // Only apply if item is using base price (not overridden)
       targetItem.precoUnitario = promocao.precoPromocional;
       targetItem.subtotal = promocao.precoPromocional * targetItem.quantidade;
     }

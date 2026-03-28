@@ -46,10 +46,10 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { fornecedorId, fornecedorNome, categoria, categoriaId, subcategoria, valor, vencimento, situacao } = body;
+    const { fornecedorId, fornecedorNome, categoria, categoriaId, subcategoriaId, tipoFinanceiro, valor, vencimento, situacao, parcelas, parcelaNumero, parcelaGrupoId } = body;
     const conta = await prisma.conta.update({
       where: { id: Number(id) },
-      data: { fornecedorId, fornecedorNome, categoria, categoriaId, subcategoria: subcategoria ?? "", valor, vencimento, situacao },
+      data: { fornecedorId, fornecedorNome, categoria, categoriaId, subcategoriaId: subcategoriaId ?? null, tipoFinanceiro: tipoFinanceiro ?? "", valor, vencimento, situacao, ...(parcelas !== undefined ? { parcelas, parcelaNumero: parcelaNumero ?? 1 } : {}), ...(parcelaGrupoId !== undefined ? { parcelaGrupoId } : {}) },
     });
 
     return NextResponse.json(conta);

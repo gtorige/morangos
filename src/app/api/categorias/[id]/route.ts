@@ -2,6 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "../../../../../auth";
 
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+    const { id } = await params;
+    const body = await request.json();
+    const { nome } = body;
+    if (!nome) return NextResponse.json({ error: "Nome é obrigatório" }, { status: 400 });
+    const categoria = await prisma.categoria.update({ where: { id: Number(id) }, data: { nome } });
+    return NextResponse.json(categoria);
+  } catch (error) {
+    console.error("Erro ao atualizar categoria:", error);
+    return NextResponse.json({ error: "Erro ao atualizar categoria" }, { status: 500 });
+  }
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
