@@ -122,6 +122,7 @@ export default function ResumoPage() {
       let url = `/api/resumo?data=${data}&periodo=${periodo}`;
       if (periodo === "custom") url = `/api/resumo?periodo=custom&dataInicio=${customInicio}&dataFim=${customFim}`;
       const res = await fetch(url);
+      if (!res.ok) return;
       setResumo(await res.json());
     } catch (e) { console.error("Erro:", e) }
     finally { setLoading(false) }
