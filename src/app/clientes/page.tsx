@@ -490,7 +490,7 @@ export default function ClientesPage() {
             Novo Cliente
           </DialogTrigger>
 
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingId ? "Editar Cliente" : "Novo Cliente"}

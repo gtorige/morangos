@@ -83,8 +83,6 @@ interface Filters {
   statusEntrega: string[];
   dataInicio: string;
   dataFim: string;
-  valorMin: string;
-  valorMax: string;
   recorrente: string;
 }
 
@@ -97,8 +95,6 @@ const defaultFilters: Filters = {
   statusEntrega: ["Pendente", "Em rota", "Entregue"],
   dataInicio: todayStr(),
   dataFim: todayStr(),
-  valorMin: "",
-  valorMax: "",
   recorrente: "",
 };
 
@@ -110,8 +106,6 @@ const emptyFilters: Filters = {
   statusEntrega: [],
   dataInicio: "",
   dataFim: "",
-  valorMin: "",
-  valorMax: "",
   recorrente: "",
 };
 
@@ -129,9 +123,44 @@ const COLUNAS_DEFAULT: { key: ColKey; label: string; defaultVisible?: boolean }[
   { key: 'data', label: 'Data' },
 ];
 
+type PeriodoKey = "ontem" | "hoje" | "semana" | "prox_semana" | "mes" | "ultimos7" | "todos";
 type StatusTab = "todos" | "concluidos" | "pendente_pgto" | "pendente_tudo";
 type SortField = "id" | "cliente" | "bairro" | "total" | "pgto" | "formaPgto" | "entrega" | "data";
 type SortDir = "asc" | "desc";
+
+function getPeriodoDates(key: PeriodoKey): { dataInicio: string; dataFim: string } {
+  switch (key) {
+    case "ontem": {
+      const d = new Date(); d.setDate(d.getDate() - 1); const s = dateToStr(d);
+      return { dataInicio: s, dataFim: s };
+    }
+    case "hoje": {
+      const t = todayStr();
+      return { dataInicio: t, dataFim: t };
+    }
+    case "semana": {
+      const mon = getMonday(new Date());
+      const sun = getSunday(mon);
+      return { dataInicio: dateToStr(mon), dataFim: dateToStr(sun) };
+    }
+    case "prox_semana": {
+      const mon = getMonday(new Date());
+      const nextMon = new Date(mon); nextMon.setDate(mon.getDate() + 7);
+      const nextSun = getSunday(nextMon);
+      return { dataInicio: dateToStr(nextMon), dataFim: dateToStr(nextSun) };
+    }
+    case "mes": {
+      const d = new Date(); const y = d.getFullYear(); const m = d.getMonth();
+      return { dataInicio: dateToStr(new Date(y, m, 1)), dataFim: dateToStr(new Date(y, m + 1, 0)) };
+    }
+    case "ultimos7": {
+      const end = new Date(); const start = new Date(); start.setDate(end.getDate() - 6);
+      return { dataInicio: dateToStr(start), dataFim: dateToStr(end) };
+    }
+    case "todos":
+      return { dataInicio: "", dataFim: "" };
+  }
+}
 
 // Helper: get Monday of the week containing `date`
 function getMonday(date: Date) {
@@ -161,10 +190,13 @@ function PedidosPageInner() {
     }
     try {
       const saved = localStorage.getItem("pedidos-filters");
+      const savedPeriodo = (localStorage.getItem("pedidos-periodo") as PeriodoKey) || "hoje";
+      const periodDates = getPeriodoDates(savedPeriodo);
       if (saved) {
         const parsed = JSON.parse(saved) as Partial<Filters>;
-        return { ...defaultFilters, ...parsed, dataInicio: defaultFilters.dataInicio, dataFim: defaultFilters.dataFim };
+        return { ...defaultFilters, ...parsed, dataInicio: periodDates.dataInicio, dataFim: periodDates.dataFim };
       }
+      return { ...defaultFilters, ...periodDates };
     } catch { /* ignore */ }
     return defaultFilters;
   });
@@ -181,6 +213,10 @@ function PedidosPageInner() {
   const [sortDir, setSortDir] = useState<SortDir>(() => {
     if (typeof window === "undefined") return "asc";
     return (localStorage.getItem("pedidos-sort-dir") as SortDir) || "asc";
+  });
+  const [periodo, setPeriodo] = useState<PeriodoKey>(() => {
+    if (typeof window === "undefined") return "hoje";
+    return (localStorage.getItem("pedidos-periodo") as PeriodoKey) || "hoje";
   });
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDatePickerOpen, setBulkDatePickerOpen] = useState(false);
@@ -239,6 +275,8 @@ function PedidosPageInner() {
     return COLUNAS_DEFAULT.map(c => ({ key: c.key, visible: c.defaultVisible ?? true }));
   });
   const [colunasOpen, setColunasOpen] = useState(false);
+  const [clienteSearch, setClienteSearch] = useState("");
+  const [bairroSearch, setBairroSearch] = useState("");
 
   // Drawer client history state
   const [drawerHistoryOpen, setDrawerHistoryOpen] = useState(false);
@@ -251,6 +289,7 @@ function PedidosPageInner() {
     const { dataInicio, dataFim, ...rest } = filters;
     localStorage.setItem("pedidos-filters", JSON.stringify(rest));
   }, [filters]);
+  useEffect(() => { localStorage.setItem("pedidos-periodo", periodo); }, [periodo]);
   useEffect(() => { localStorage.setItem("pedidos-tab", tab); }, [tab]);
   useEffect(() => { localStorage.setItem("pedidos-sort-field", sortField); }, [sortField]);
   useEffect(() => { localStorage.setItem("pedidos-sort-dir", sortDir); }, [sortDir]);
@@ -422,13 +461,26 @@ function PedidosPageInner() {
     setDrawerEditMode(true);
   }
 
-  function getEditPromocaoForProduto(produtoId: string): Promocao | undefined {
-    return editPromocoes.find((p) => String(p.produtoId) === produtoId);
+  function getEditPromocaoForProduto(produtoId: string, quantidade?: number): Promocao | undefined {
+    const promos = editPromocoes.filter((p) => String(p.produtoId) === produtoId);
+    if (promos.length === 0) return undefined;
+    if (quantidade != null) {
+      const bestQtdMin = promos
+        .filter((p) => p.tipo === "quantidade_minima" && p.quantidadeMinima != null && quantidade >= p.quantidadeMinima)
+        .sort((a, b) => (b.quantidadeMinima ?? 0) - (a.quantidadeMinima ?? 0))[0];
+      if (bestQtdMin) return bestQtdMin;
+    }
+    const priorityOrder = ["desconto", "leve_x_pague_y"];
+    for (const tipo of priorityOrder) {
+      const found = promos.find((p) => p.tipo === tipo);
+      if (found) return found;
+    }
+    return undefined;
   }
 
   function calcEditSubtotal(item: EditItem): { subtotal: number; qtdCobrada: number | null } {
     const qty = parseFloat(item.quantidade || "0");
-    const promo = !item.precoManual ? getEditPromocaoForProduto(item.produtoId) : undefined;
+    const promo = !item.precoManual ? getEditPromocaoForProduto(item.produtoId, qty) : undefined;
     const tipo = promo ? (promo.tipo || "desconto") : undefined;
     const subtotal = calcSubtotalBase(qty, item.precoUnitario, tipo, promo?.leveQuantidade, promo?.pagueQuantidade);
     const plainSubtotal = item.precoUnitario * qty;
@@ -591,8 +643,6 @@ function PedidosPageInner() {
       }
       if (f.dataInicio) params.set("dataInicio", f.dataInicio);
       if (f.dataFim) params.set("dataFim", f.dataFim);
-      if (f.valorMin) params.set("valorMin", f.valorMin);
-      if (f.valorMax) params.set("valorMax", f.valorMax);
 
       const query = params.toString();
       const res = await fetch(`/api/pedidos${query ? `?${query}` : ""}`);
@@ -953,8 +1003,6 @@ function PedidosPageInner() {
           });
         }
         if (filters.situacaoPagamento) chips.push({ label: `Pgto: ${filters.situacaoPagamento}`, onRemove: () => setFilters(f => ({ ...f, situacaoPagamento: "" })) });
-        if (filters.valorMin) chips.push({ label: `Min: R$ ${filters.valorMin}`, onRemove: () => setFilters(f => ({ ...f, valorMin: "" })) });
-        if (filters.valorMax) chips.push({ label: `Max: R$ ${filters.valorMax}`, onRemove: () => setFilters(f => ({ ...f, valorMax: "" })) });
         if (filters.recorrente) chips.push({ label: `Recorrente: ${filters.recorrente === "sim" ? "Sim" : "Não"}`, onRemove: () => setFilters(f => ({ ...f, recorrente: "" })) });
         if (chips.length === 0) return null;
         return (
@@ -974,34 +1022,26 @@ function PedidosPageInner() {
 
       {/* Date range shortcuts */}
       <div className="flex flex-wrap gap-1.5">
-        {[
-          { label: "Ontem", fn: () => {
-            const d = new Date(); d.setDate(d.getDate() - 1); const s = dateToStr(d);
-            setFilters(f => ({ ...f, dataInicio: s, dataFim: s }));
-          }},
-          { label: "Hoje", fn: () => { const t = todayStr(); setFilters(f => ({ ...f, dataInicio: t, dataFim: t })) } },
-          { label: "Semana", fn: () => {
-            const mon = getMonday(new Date());
-            const sun = getSunday(mon);
-            setFilters(f => ({ ...f, dataInicio: dateToStr(mon), dataFim: dateToStr(sun) }));
-          }},
-          { label: "Próx. Semana", fn: () => {
-            const mon = getMonday(new Date());
-            const nextMon = new Date(mon); nextMon.setDate(mon.getDate() + 7);
-            const nextSun = getSunday(nextMon);
-            setFilters(f => ({ ...f, dataInicio: dateToStr(nextMon), dataFim: dateToStr(nextSun) }));
-          }},
-          { label: "Mês", fn: () => {
-            const d = new Date(); const y = d.getFullYear(); const m = d.getMonth();
-            setFilters(f => ({ ...f, dataInicio: dateToStr(new Date(y,m,1)), dataFim: dateToStr(new Date(y,m+1,0)) }));
-          }},
-          { label: "Últimos 7 dias", fn: () => {
-            const end = new Date(); const start = new Date(); start.setDate(end.getDate() - 6);
-            setFilters(f => ({ ...f, dataInicio: dateToStr(start), dataFim: dateToStr(end) }));
-          }},
-          { label: "Todos", fn: () => { setFilters(f => ({ ...f, dataInicio: "", dataFim: "" })) } },
-        ].map((s) => (
-          <Button key={s.label} variant="outline" size="sm" onClick={s.fn} className="h-7 text-xs">
+        {([
+          { key: "ontem" as PeriodoKey, label: "Ontem" },
+          { key: "hoje" as PeriodoKey, label: "Hoje" },
+          { key: "semana" as PeriodoKey, label: "Semana" },
+          { key: "prox_semana" as PeriodoKey, label: "Próx. Semana" },
+          { key: "mes" as PeriodoKey, label: "Mês" },
+          { key: "ultimos7" as PeriodoKey, label: "Últimos 7 dias" },
+          { key: "todos" as PeriodoKey, label: "Todos" },
+        ]).map((s) => (
+          <Button
+            key={s.key}
+            variant={periodo === s.key ? "default" : "outline"}
+            size="sm"
+            onClick={() => {
+              setPeriodo(s.key);
+              const dates = getPeriodoDates(s.key);
+              setFilters(f => ({ ...f, ...dates }));
+            }}
+            className={`h-7 text-xs ${periodo === s.key ? "bg-primary text-primary-foreground" : ""}`}
+          >
             {s.label}
           </Button>
         ))}
@@ -1025,50 +1065,72 @@ function PedidosPageInner() {
         <CardContent>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               <div className="space-y-2">
-                <Label>Cliente</Label>
-                <div className="space-y-1 max-h-[120px] overflow-y-auto rounded-lg border border-input bg-transparent p-2">
-                  {uniqueClientes.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">Nenhum cliente</p>
-                  ) : uniqueClientes.map(nome => (
-                    <label key={nome} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-accent/50 rounded px-1 py-0.5">
-                      <input
-                        type="checkbox"
-                        checked={filters.clientes.includes(nome)}
-                        onChange={(e) => {
-                          const next = e.target.checked
-                            ? [...filters.clientes, nome]
-                            : filters.clientes.filter(c => c !== nome);
-                          setFilters({ ...filters, clientes: next });
-                        }}
-                        className="accent-[var(--color-primary)]"
-                      />
-                      {nome}
-                    </label>
-                  ))}
+                <Label>Cliente {filters.clientes.length > 0 && <span className="text-xs text-primary ml-1">({filters.clientes.length})</span>}</Label>
+                <div className="rounded-lg border border-input bg-transparent">
+                  <div className="p-1.5 border-b border-input">
+                    <input
+                      type="text"
+                      placeholder="Buscar cliente..."
+                      value={clienteSearch}
+                      onChange={(e) => setClienteSearch(e.target.value)}
+                      className="w-full bg-transparent text-xs px-1.5 py-1 outline-none placeholder:text-muted-foreground"
+                    />
+                  </div>
+                  <div className="space-y-1 max-h-[120px] overflow-y-auto p-2">
+                    {uniqueClientes.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Nenhum cliente</p>
+                    ) : uniqueClientes.filter(nome => !clienteSearch || nome.toLowerCase().includes(clienteSearch.toLowerCase())).map(nome => (
+                      <label key={nome} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-accent/50 rounded px-1 py-0.5">
+                        <input
+                          type="checkbox"
+                          checked={filters.clientes.includes(nome)}
+                          onChange={(e) => {
+                            const next = e.target.checked
+                              ? [...filters.clientes, nome]
+                              : filters.clientes.filter(c => c !== nome);
+                            setFilters({ ...filters, clientes: next });
+                          }}
+                          className="accent-[var(--color-primary)]"
+                        />
+                        {nome}
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label>Bairro</Label>
-                <div className="space-y-1 max-h-[120px] overflow-y-auto rounded-lg border border-input bg-transparent p-2">
-                  {uniqueBairros.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">Nenhum bairro</p>
-                  ) : uniqueBairros.map(bairro => (
-                    <label key={bairro} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-accent/50 rounded px-1 py-0.5">
-                      <input
-                        type="checkbox"
-                        checked={filters.bairros.includes(bairro)}
-                        onChange={(e) => {
-                          const next = e.target.checked
-                            ? [...filters.bairros, bairro]
-                            : filters.bairros.filter(b => b !== bairro);
-                          setFilters({ ...filters, bairros: next });
-                        }}
-                        className="accent-[var(--color-primary)]"
-                      />
-                      {bairro}
-                    </label>
-                  ))}
+                <Label>Bairro {filters.bairros.length > 0 && <span className="text-xs text-primary ml-1">({filters.bairros.length})</span>}</Label>
+                <div className="rounded-lg border border-input bg-transparent">
+                  <div className="p-1.5 border-b border-input">
+                    <input
+                      type="text"
+                      placeholder="Buscar bairro..."
+                      value={bairroSearch}
+                      onChange={(e) => setBairroSearch(e.target.value)}
+                      className="w-full bg-transparent text-xs px-1.5 py-1 outline-none placeholder:text-muted-foreground"
+                    />
+                  </div>
+                  <div className="space-y-1 max-h-[120px] overflow-y-auto p-2">
+                    {uniqueBairros.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Nenhum bairro</p>
+                    ) : uniqueBairros.filter(bairro => !bairroSearch || bairro.toLowerCase().includes(bairroSearch.toLowerCase())).map(bairro => (
+                      <label key={bairro} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-accent/50 rounded px-1 py-0.5">
+                        <input
+                          type="checkbox"
+                          checked={filters.bairros.includes(bairro)}
+                          onChange={(e) => {
+                            const next = e.target.checked
+                              ? [...filters.bairros, bairro]
+                              : filters.bairros.filter(b => b !== bairro);
+                            setFilters({ ...filters, bairros: next });
+                          }}
+                          className="accent-[var(--color-primary)]"
+                        />
+                        {bairro}
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -1153,36 +1215,6 @@ function PedidosPageInner() {
                   value={filters.dataFim}
                   onChange={(e) =>
                     setFilters({ ...filters, dataFim: e.target.value })
-                  }
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="filter-valor-min">Valor min</Label>
-                <Input
-                  id="filter-valor-min"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0,00"
-                  value={filters.valorMin}
-                  onChange={(e) =>
-                    setFilters({ ...filters, valorMin: e.target.value })
-                  }
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="filter-valor-max">Valor max</Label>
-                <Input
-                  id="filter-valor-max"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0,00"
-                  value={filters.valorMax}
-                  onChange={(e) =>
-                    setFilters({ ...filters, valorMax: e.target.value })
                   }
                 />
               </div>
@@ -1302,6 +1334,26 @@ function PedidosPageInner() {
           </div>
           <Button
             size="sm"
+            className="bg-red-600 hover:bg-red-700 text-white h-7 text-xs"
+            onClick={async () => {
+              if (!confirm(`Tem certeza que deseja excluir ${selectedIds.size} pedido(s)? Esta ação não pode ser desfeita.`)) return;
+              try {
+                await Promise.all([...selectedIds].map(id =>
+                  fetch(`/api/pedidos/${id}`, { method: "DELETE" })
+                ));
+                setSelectedIds(new Set());
+                fetchPedidos();
+              } catch (error) {
+                console.error("Erro ao excluir pedidos:", error);
+                alert("Erro ao excluir alguns pedidos.");
+              }
+            }}
+          >
+            <Trash2 className="size-3.5" />
+            Excluir
+          </Button>
+          <Button
+            size="sm"
             variant="ghost"
             className="h-7 text-xs ml-auto"
             onClick={() => setSelectedIds(new Set())}
@@ -1326,30 +1378,26 @@ function PedidosPageInner() {
               </div>
               {/* Card header - clickable to edit */}
               <div
-                className="p-3 pr-8 cursor-pointer transition-colors"
+                className="p-2.5 pr-8 cursor-pointer transition-colors"
                 onClick={() => setDrawerPedidoId(pedido.id)}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="font-medium text-sm truncate">{pedido.cliente?.nome}</span>
-                    {pedido.recorrenteId && <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">Rec</Badge>}
+                    <span className="text-xs font-medium truncate">{pedido.cliente?.nome}</span>
                   </div>
-                  <span className="font-bold text-sm shrink-0 ml-2">{formatPrice(pedido.total)}</span>
+                  <span className="text-xs font-bold shrink-0 ml-2">{formatPrice(pedido.total)}</span>
                 </div>
-                <div className="flex items-center gap-1.5 mt-1.5">
+                <div className="flex items-center gap-1.5 mt-1">
                   {getPagamentoBadge(pedido.situacaoPagamento, pedido.statusEntrega)}
                   {getEntregaBadge(pedido.statusEntrega)}
                   <span className="text-xs text-muted-foreground ml-auto">{formatDate(pedido.dataEntrega)}</span>
                 </div>
-                {pedido.cliente?.bairro && (
-                  <div className="text-xs text-muted-foreground mt-1">{pedido.cliente.bairro}</div>
-                )}
               </div>
               {/* Action buttons */}
               <div className="flex border-t divide-x">
                 {pedido.statusEntrega === "Entregue" && pedido.situacaoPagamento !== "Pago" && (
                   <button
-                    className="flex-1 flex items-center justify-center gap-1 py-2 text-xs text-green-400 hover:bg-green-400/10 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-green-400 hover:bg-green-400/10 transition-colors"
                     onClick={() => handleMarkPago(pedido)}
                   >
                     <CreditCard className="size-3.5" />
@@ -1358,7 +1406,7 @@ function PedidosPageInner() {
                 )}
                 {pedido.statusEntrega !== "Entregue" && (
                   <button
-                    className="flex-1 flex items-center justify-center gap-1 py-2 text-xs text-blue-400 hover:bg-blue-400/10 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-blue-400 hover:bg-blue-400/10 transition-colors"
                     onClick={() => handleMarkEntregue(pedido)}
                   >
                     <Check className="size-3.5" />
@@ -1366,7 +1414,7 @@ function PedidosPageInner() {
                   </button>
                 )}
                 <button
-                  className="flex-1 flex items-center justify-center gap-1 py-2 text-xs text-muted-foreground hover:bg-accent/50 transition-colors"
+                  className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-muted-foreground hover:bg-accent/50 transition-colors"
                   onClick={() => handleDuplicar(pedido.id)}
                 >
                   <Copy className="size-3.5" />
@@ -1375,7 +1423,7 @@ function PedidosPageInner() {
                 <Popover>
                   <PopoverTrigger
                     render={
-                      <button className="flex-1 flex items-center justify-center gap-1 py-2 text-xs text-muted-foreground hover:bg-accent/50 transition-colors" />
+                      <button className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-muted-foreground hover:bg-accent/50 transition-colors" />
                     }
                   >
                     <MoreHorizontal className="size-3.5" />

@@ -48,7 +48,7 @@ export const tipoPromocao = z.enum([
   "desconto",
   "leve_x_pague_y",
   "quantidade_minima",
-  "compra_casada",
+  "compra_parceira",
 ]);
 
 export const promocaoCreateSchema = z.object({

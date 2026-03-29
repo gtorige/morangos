@@ -70,9 +70,9 @@ function tipoLabel(item: Promocao, produtos: Produto[]): string {
       const min = item.quantidadeMinima ?? 0;
       return `Acima de ${min} un. · ${formatPrice(item.precoPromocional)}`;
     }
-    case "compra_casada": {
+    case "compra_parceira": {
       const p2 = produtos.find((p) => p.id === item.produtoId2);
-      return `Casada com ${p2?.nome ?? "?"} · ${formatPrice(item.precoPromocional)}`;
+      return `Parceira com ${p2?.nome ?? "?"} · ${formatPrice(item.precoPromocional)}`;
     }
     default:
       return item.tipo;
@@ -245,7 +245,7 @@ export default function PromocoesPage() {
     } else if (form.tipo === "quantidade_minima") {
       body.quantidadeMinima = Number(form.quantidadeMinima);
       body.precoPromocional = parseFloat(form.precoPromocional);
-    } else if (form.tipo === "compra_casada") {
+    } else if (form.tipo === "compra_parceira") {
       body.produtoId2 = Number(form.produtoId2);
       body.precoPromocional = parseFloat(form.precoPromocional);
     }
@@ -428,7 +428,7 @@ export default function PromocoesPage() {
                 <option value="desconto">Desconto no Preço</option>
                 <option value="leve_x_pague_y">Leve X Pague Y</option>
                 <option value="quantidade_minima">Acima de X unidades → preço especial</option>
-                <option value="compra_casada">Compra Casada (leva 2 produtos)</option>
+                <option value="compra_parceira">Compra Parceira (leva 2 produtos)</option>
               </select>
             </div>
 
@@ -520,8 +520,8 @@ export default function PromocoesPage() {
               </div>
             )}
 
-            {/* Compra casada */}
-            {form.tipo === "compra_casada" && (
+            {/* Compra parceira */}
+            {form.tipo === "compra_parceira" && (
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label>Produto parceiro (deve estar no mesmo pedido)</Label>
@@ -542,9 +542,9 @@ export default function PromocoesPage() {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="precoPromocionalCasada">Preço promocional do produto parceiro</Label>
+                  <Label htmlFor="precoPromocionalParceira">Preço promocional do produto parceiro</Label>
                   <Input
-                    id="precoPromocionalCasada"
+                    id="precoPromocionalParceira"
                     type="number"
                     step="0.01"
                     min="0"

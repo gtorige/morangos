@@ -231,8 +231,27 @@ export function NovoPedidoSheet({ open, onOpenChange, onSuccess, initialData }: 
     ? clientes.filter((c) => c.nome.toLowerCase().includes(clienteBusca.toLowerCase()))
     : clientes;
 
-  function getPromocaoForProduto(produtoId: string): Promocao | undefined {
-    return promocoes.find((p) => String(p.produtoId) === produtoId);
+  function getPromocaoForProduto(produtoId: string, quantidade?: number): Promocao | undefined {
+    const promos = promocoes.filter((p) => String(p.produtoId) === produtoId);
+    if (promos.length === 0) return undefined;
+
+    // For quantidade_minima: find the best matching tier (highest threshold the qty qualifies for)
+    if (quantidade != null) {
+      const bestQtdMin = promos
+        .filter((p) => p.tipo === "quantidade_minima" && p.quantidadeMinima != null && quantidade >= p.quantidadeMinima)
+        .sort((a, b) => (b.quantidadeMinima ?? 0) - (a.quantidadeMinima ?? 0))[0];
+      if (bestQtdMin) return bestQtdMin;
+    }
+
+    // Priority: desconto > leve_x_pague_y > other (compra_parceira is for the partner, not this product)
+    const priorityOrder = ["desconto", "leve_x_pague_y"];
+    for (const tipo of priorityOrder) {
+      const found = promos.find((p) => p.tipo === tipo);
+      if (found) return found;
+    }
+
+    // No direct promo found — return undefined (compra_parceira on produtoId is not a discount for this product)
+    return undefined;
   }
 
   function getFilteredProdutos(index: number) {
@@ -271,7 +290,7 @@ export function NovoPedidoSheet({ open, onOpenChange, onSuccess, initialData }: 
 
   function calcSubtotal(item: ItemPedido): { subtotal: number; qtdCobrada: number | null } {
     const qty = parseFloat(item.quantidade || "0");
-    const promo = !item.precoManual ? getPromocaoForProduto(item.produtoId) : undefined;
+    const promo = !item.precoManual ? getPromocaoForProduto(item.produtoId, qty) : undefined;
     const tipo = promo ? (promo.tipo || "desconto") : undefined;
     const subtotal = calcSubtotalBase(qty, item.precoUnitario, tipo, promo?.leveQuantidade, promo?.pagueQuantidade, promo?.quantidadeMinima, promo?.precoPromocional);
     const plainSubtotal = item.precoUnitario * qty;
@@ -279,28 +298,26 @@ export function NovoPedidoSheet({ open, onOpenChange, onSuccess, initialData }: 
     return { subtotal, qtdCobrada };
   }
 
-  function applyCompradaCasadaDiscounts(items: ItemPedido[]): ItemPedido[] {
+  function applyCompraParceiraDiscounts(items: ItemPedido[]): ItemPedido[] {
     const produtoIdSet = new Set(items.map((i) => i.produtoId));
     return items.map((item) => {
       if (item.precoManual) return item;
-      const casadaPromo = promocoes.find(
-        (p) => p.tipo === "compra_casada" && p.produtoId2 !== null && String(p.produtoId2) === item.produtoId
+      // Only apply to the PARTNER product (produtoId2), not the primary
+      const parceiraPromo = promocoes.find(
+        (p) => p.tipo === "compra_parceira" && p.produtoId2 !== null && String(p.produtoId2) === item.produtoId
       );
-      if (!casadaPromo) return item;
-      const primaryInOrder = produtoIdSet.has(String(casadaPromo.produtoId));
+      if (!parceiraPromo) return item;
+      const primaryInOrder = produtoIdSet.has(String(parceiraPromo.produtoId));
       const qty = parseFloat(item.quantidade) || 0;
       if (primaryInOrder) {
-        const newPrice = casadaPromo.precoPromocional;
+        // If this product already has another active promo, don't override
+        const activePromo = getPromocaoForProduto(item.produtoId, qty);
+        if (activePromo) return item;
+        // No other promo — apply partner discount
+        const newPrice = parceiraPromo.precoPromocional;
         return { ...item, precoUnitario: newPrice, subtotal: qty * newPrice };
-      } else {
-        const produto = produtos.find((p) => String(p.id) === item.produtoId);
-        if (!produto) return item;
-        const regularPromo = promocoes.find(
-          (p) => String(p.produtoId) === item.produtoId && (p.tipo || "desconto") === "desconto" && p.precoPromocional
-        );
-        const basePrice = regularPromo ? regularPromo.precoPromocional : produto.preco;
-        return { ...item, precoUnitario: basePrice, subtotal: qty * basePrice };
       }
+      return item;
     });
   }
 
@@ -309,7 +326,7 @@ export function NovoPedidoSheet({ open, onOpenChange, onSuccess, initialData }: 
   }
 
   function handleRemoveItem(index: number) {
-    setItens(applyCompradaCasadaDiscounts(itens.filter((_, i) => i !== index)));
+    setItens(applyCompraParceiraDiscounts(itens.filter((_, i) => i !== index)));
   }
 
   function handleItemChange(index: number, field: keyof ItemPedido, value: string) {
@@ -330,13 +347,21 @@ export function NovoPedidoSheet({ open, onOpenChange, onSuccess, initialData }: 
     } else if (field === "quantidade") {
       item.quantidade = value;
       if (!item.precoManual) {
-        const promo = getPromocaoForProduto(item.produtoId);
-        if (promo && promo.tipo === "quantidade_minima" && promo.quantidadeMinima && promo.precoPromocional) {
-          const qty = parseFloat(value) || 0;
-          const produto = produtos.find((p) => String(p.id) === item.produtoId);
-          item.precoUnitario = qty >= promo.quantidadeMinima ? promo.precoPromocional : (produto?.preco ?? item.precoUnitario);
+        const qty = parseFloat(value) || 0;
+        const produto = produtos.find((p) => String(p.id) === item.produtoId);
+        const promo = getPromocaoForProduto(item.produtoId, qty);
+
+        if (promo && promo.tipo === "quantidade_minima" && promo.quantidadeMinima && promo.precoPromocional && qty >= promo.quantidadeMinima) {
+          item.precoUnitario = promo.precoPromocional;
+
+        } else if (promo && promo.tipo === "desconto" && promo.precoPromocional) {
+          item.precoUnitario = promo.precoPromocional;
+        } else {
+          item.precoUnitario = produto?.preco ?? item.precoUnitario;
+
         }
       }
+
       item.subtotal = calcSubtotal(item).subtotal;
     } else if (field === "precoUnitario") {
       item.precoUnitario = parseFloat(value) || 0;
@@ -345,7 +370,7 @@ export function NovoPedidoSheet({ open, onOpenChange, onSuccess, initialData }: 
     }
 
     updated[index] = item;
-    setItens(applyCompradaCasadaDiscounts(updated));
+    setItens(applyCompraParceiraDiscounts(updated));
   }
 
   function handleRepetirUltimoPedido() {
@@ -577,17 +602,18 @@ export function NovoPedidoSheet({ open, onOpenChange, onSuccess, initialData }: 
                 ) : (
                   <>
                     {itens.map((item, index) => {
-                      const promo = getPromocaoForProduto(item.produtoId);
+                      const qty = parseFloat(item.quantidade || "0");
+                      const promo = getPromocaoForProduto(item.produtoId, qty);
                       const produto = produtos.find((p) => String(p.id) === item.produtoId);
                       const { subtotal, qtdCobrada } = calcSubtotal(item);
                       const isDescontoPromo = promo && (promo.tipo || "desconto") === "desconto";
                       const isLevePromo = promo && promo.tipo === "leve_x_pague_y";
                       const isQtdMinPromo = promo && promo.tipo === "quantidade_minima";
-                      const isCasadaPromo = promo && promo.tipo === "compra_casada";
-                      const casadaPartnerPromo = promocoes.find(
-                        (p) => p.tipo === "compra_casada" && p.produtoId2 !== null && String(p.produtoId2) === item.produtoId
+                      const isParceiraPromo = promo && promo.tipo === "compra_parceira";
+                      const parceiraPartnerPromo = promocoes.find(
+                        (p) => p.tipo === "compra_parceira" && p.produtoId2 !== null && String(p.produtoId2) === item.produtoId
                       );
-                      const isCasadaPartnerActive = casadaPartnerPromo && itens.some((i) => String(casadaPartnerPromo.produtoId) === i.produtoId);
+                      const isParceiraPartnerActive = parceiraPartnerPromo && itens.some((i) => String(parceiraPartnerPromo.produtoId) === i.produtoId);
 
                       return (
                         <div key={index} className="space-y-1">
@@ -674,16 +700,49 @@ export function NovoPedidoSheet({ open, onOpenChange, onSuccess, initialData }: 
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 pl-0.5 flex-wrap">
-                            {isDescontoPromo && produto && (
-                              <><Badge className="bg-green-600 text-white text-xs">Promo: {formatPrice(promo.precoPromocional)}</Badge><span className="text-xs text-muted-foreground line-through">{formatPrice(produto.preco)}</span></>
-                            )}
-                            {isLevePromo && <Badge className="bg-blue-600 text-white text-xs">Leve {promo.leveQuantidade} Pague {promo.pagueQuantidade}</Badge>}
-                            {isQtdMinPromo && promo.quantidadeMinima && <Badge className="bg-purple-600 text-white text-xs">A partir de {promo.quantidadeMinima} un.: {formatPrice(promo.precoPromocional)}</Badge>}
-                            {isCasadaPromo && <Badge className="bg-orange-600/60 text-white text-xs">Compra casada</Badge>}
-                            {isCasadaPartnerActive && casadaPartnerPromo && <Badge className="bg-orange-600 text-white text-xs">Compra casada: {formatPrice(casadaPartnerPromo.precoPromocional)}</Badge>}
-                            {qtdCobrada !== null && <span className="text-xs text-muted-foreground">({qtdCobrada} un. cobradas)</span>}
-                          </div>
+                          {/* Show ALL promotions for this product, highlight the active one */}
+                          {(() => {
+                            const allPromos = promocoes.filter((p) => String(p.produtoId) === item.produtoId);
+                            if (allPromos.length === 0 && !isParceiraPartnerActive) return null;
+                            return (
+                              <div className="flex items-center gap-1.5 pl-0.5 flex-wrap">
+                                {allPromos.map((p) => {
+                                  const isActive = promo?.id === p.id;
+                                  const opacity = isActive ? "" : "opacity-40";
+                                  if (p.tipo === "desconto") return (
+                                    <Badge key={p.id} className={`bg-green-600 text-white text-xs ${opacity}`}>
+                                      {p.nome || `Promo: ${formatPrice(p.precoPromocional)}`}
+                                    </Badge>
+                                  );
+                                  if (p.tipo === "leve_x_pague_y") return (
+                                    <Badge key={p.id} className={`bg-blue-600 text-white text-xs ${opacity}`}>
+                                      Leve {p.leveQuantidade} Pague {p.pagueQuantidade}
+                                    </Badge>
+                                  );
+                                  if (p.tipo === "quantidade_minima") return (
+                                    <Badge key={p.id} className={`bg-purple-600 text-white text-xs ${opacity}`}>
+                                      {p.quantidadeMinima}+ un. → {formatPrice(p.precoPromocional)}
+                                    </Badge>
+                                  );
+                                  if (p.tipo === "compra_parceira") return (
+                                    <Badge key={p.id} className={`bg-orange-600/60 text-white text-xs ${opacity}`}>
+                                      Compra parceira
+                                    </Badge>
+                                  );
+                                  return null;
+                                })}
+                                {isParceiraPartnerActive && parceiraPartnerPromo && (
+                                  <Badge className="bg-orange-600 text-white text-xs">
+                                    Parceira: {formatPrice(parceiraPartnerPromo.precoPromocional)}
+                                  </Badge>
+                                )}
+                                {produto && promo && item.precoUnitario !== produto.preco && (
+                                  <span className="text-xs text-muted-foreground line-through">{formatPrice(produto.preco)}</span>
+                                )}
+                                {qtdCobrada !== null && <span className="text-xs text-muted-foreground">({qtdCobrada} un. cobradas)</span>}
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })}
