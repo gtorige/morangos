@@ -173,13 +173,11 @@ Write-Host 'Gerando cliente Prisma...' -ForegroundColor Yellow
 & npx.cmd prisma generate 2>&1 | Out-Host
 
 # Gerar SQL do schema e aplicar via @libsql/client (Prisma db push nao suporta libsql://)
-Write-Host 'Gerando schema SQL...' -ForegroundColor Yellow
-& npx.cmd prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > schema.sql 2>$null
-
-# Script Node.js que aplica schema + importa dados automaticamente
+# Script Node.js que gera schema, aplica, e importa dados automaticamente
 $setupDbScript = @'
 require("dotenv").config();
 const { createClient } = require("@libsql/client");
+const { execSync } = require("child_process");
 const fs = require("fs");
 
 const client = createClient({
@@ -188,9 +186,20 @@ const client = createClient({
 });
 
 async function run() {
-  // 1. Apply schema
-  const schema = fs.readFileSync("schema.sql", "utf8");
-  const stmts = schema.split(";").map(s => s.trim()).filter(s => s.length > 0);
+  // 1. Generate schema SQL via prisma (outputs UTF-8 to stdout)
+  console.log("Generating schema...");
+  const schema = execSync("npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script", { encoding: "utf8" });
+  const stmts = schema.split(";").map(s => s.trim()).filter(s => s.length > 0 && !s.startsWith("--"));
+
+  // 2. Drop existing tables first (clean slate)
+  console.log("Cleaning existing tables...");
+  const existing = await client.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_prisma%'");
+  await client.execute("PRAGMA foreign_keys = OFF;");
+  for (const row of existing.rows) {
+    try { await client.execute('DROP TABLE IF EXISTS "' + row.name + '";'); } catch {}
+  }
+
+  // 3. Apply schema
   console.log("Applying schema (" + stmts.length + " statements)...");
   for (const stmt of stmts) {
     try {
@@ -201,23 +210,22 @@ async function run() {
   }
   console.log("Schema applied!");
 
-  // 2. Import data if import.sql exists
+  // 4. Import data if import.sql exists
   if (fs.existsSync("import.sql")) {
     const sql = fs.readFileSync("import.sql", "utf8");
     const rows = sql.split("\n").map(s => s.trim()).filter(s => s.length > 0);
     if (rows.length > 0) {
       console.log("Importing " + rows.length + " rows...");
-      await client.execute("PRAGMA foreign_keys = OFF;");
       let ok = 0, err = 0;
       for (const row of rows) {
-        try { await client.execute(row); ok++; } catch { err++; }
+        try { await client.execute(row); ok++; } catch (e) { err++; if (err <= 3) console.log("  ERR: " + e.message.substring(0,80)); }
       }
-      await client.execute("PRAGMA foreign_keys = ON;");
-      console.log("Imported: " + ok + " OK" + (err > 0 ? ", " + err + " skipped (duplicates)" : ""));
+      console.log("Imported: " + ok + " OK" + (err > 0 ? ", " + err + " errors" : ""));
     }
   }
+  await client.execute("PRAGMA foreign_keys = ON;");
 
-  // 3. Verify
+  // 5. Verify
   const tables = await client.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_prisma%'");
   console.log("\nBanco na nuvem:");
   let total = 0;
