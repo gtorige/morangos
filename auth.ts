@@ -1,19 +1,17 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import bcrypt from "bcryptjs";
+import { prisma } from "@/lib/prisma";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Credentials({
       credentials: {
-        username: { label: "Usuário", type: "text" },
+        username: { label: "Usuario", type: "text" },
         password: { label: "Senha", type: "password" },
       },
       async authorize(credentials) {
         if (!credentials?.username || !credentials?.password) return null;
-
-        // Dynamic imports to avoid bundling prisma/bcrypt in Edge Middleware
-        const { prisma } = await import("@/lib/prisma");
-        const bcrypt = await import("bcryptjs");
 
         const user = await prisma.usuario.findUnique({
           where: { username: credentials.username as string },
@@ -44,19 +42,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
   useSecureCookies: false,
   callbacks: {
-    authorized({ auth, request }) {
-      const isLoggedIn = !!auth?.user;
-      const { pathname } = request.nextUrl;
-
-      const publicPaths = ["/login", "/setup", "/api/login", "/api/setup", "/api/auth"];
-      if (publicPaths.some((p) => pathname.startsWith(p))) {
-        return true;
-      }
-
-      if (!isLoggedIn) return false;
-
-      return true;
-    },
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
