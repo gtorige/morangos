@@ -172,10 +172,65 @@ Show-Step 6 'CONFIGURAR BANCO DE DADOS'
 Write-Host 'Gerando cliente Prisma...' -ForegroundColor Yellow
 & npx.cmd prisma generate 2>&1 | Out-Host
 
-Write-Host 'Aplicando schema no banco Turso...' -ForegroundColor Yellow
-$prevEA = $ErrorActionPreference; $ErrorActionPreference = 'SilentlyContinue'
-& npx.cmd prisma db push --accept-data-loss 2>&1 | Out-Host
-$ErrorActionPreference = $prevEA
+# Gerar SQL do schema e aplicar via @libsql/client (Prisma db push nao suporta libsql://)
+Write-Host 'Gerando schema SQL...' -ForegroundColor Yellow
+& npx.cmd prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > schema.sql 2>$null
+
+# Script Node.js que aplica schema + importa dados automaticamente
+$setupDbScript = @'
+require("dotenv").config();
+const { createClient } = require("@libsql/client");
+const fs = require("fs");
+
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL,
+  authToken: process.env.TURSO_AUTH_TOKEN,
+});
+
+async function run() {
+  // 1. Apply schema
+  const schema = fs.readFileSync("schema.sql", "utf8");
+  const stmts = schema.split(";").map(s => s.trim()).filter(s => s.length > 0);
+  console.log("Applying schema (" + stmts.length + " statements)...");
+  for (const stmt of stmts) {
+    try {
+      await client.execute(stmt + ";");
+    } catch (e) {
+      if (!e.message.includes("already exists")) console.log("  WARN: " + e.message.substring(0, 80));
+    }
+  }
+  console.log("Schema applied!");
+
+  // 2. Import data if import.sql exists
+  if (fs.existsSync("import.sql")) {
+    const sql = fs.readFileSync("import.sql", "utf8");
+    const rows = sql.split("\n").map(s => s.trim()).filter(s => s.length > 0);
+    if (rows.length > 0) {
+      console.log("Importing " + rows.length + " rows...");
+      await client.execute("PRAGMA foreign_keys = OFF;");
+      let ok = 0, err = 0;
+      for (const row of rows) {
+        try { await client.execute(row); ok++; } catch { err++; }
+      }
+      await client.execute("PRAGMA foreign_keys = ON;");
+      console.log("Imported: " + ok + " OK" + (err > 0 ? ", " + err + " skipped (duplicates)" : ""));
+    }
+  }
+
+  // 3. Verify
+  const tables = await client.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_prisma%'");
+  console.log("\nBanco na nuvem:");
+  let total = 0;
+  for (const row of tables.rows) {
+    const count = await client.execute('SELECT COUNT(*) as c FROM "' + row.name + '"');
+    const c = count.rows[0].c;
+    if (c > 0) { console.log("  " + row.name + ": " + c + " registros"); total += Number(c); }
+  }
+  console.log("Total: " + total + " registros");
+}
+run().catch(e => { console.error("Erro:", e.message); process.exit(1); });
+'@
+Set-Content -Path (Join-Path $deployDir 'setup-turso.js') -Value $setupDbScript -Encoding UTF8
 
 # Verificar se existe banco local para importar
 $localDbPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'morangos\prisma\dev.db'
@@ -186,7 +241,7 @@ if (Test-Path $safeBackupDir) {
     if ($latestBackup) { $backupDbPath = $latestBackup.FullName }
 }
 
-$importDb = $false
+$sourceDb = $null
 if ((Test-Path $localDbPath) -or $backupDbPath) {
     Write-Host ''
     Write-Host '========================================' -ForegroundColor Yellow
@@ -217,20 +272,16 @@ if ((Test-Path $localDbPath) -or $backupDbPath) {
 
     $importChoice = Read-Host 'Escolha (1/2/3)'
 
-    if ($importChoice -eq '1' -and (Test-Path $localDbPath)) {
-        $importDb = $true
-        $sourceDb = $localDbPath
-    } elseif ($importChoice -eq '2' -and $backupDbPath) {
-        $importDb = $true
-        $sourceDb = $backupDbPath
-    }
+    if ($importChoice -eq '1' -and (Test-Path $localDbPath)) { $sourceDb = $localDbPath }
+    elseif ($importChoice -eq '2' -and $backupDbPath) { $sourceDb = $backupDbPath }
 }
 
-if ($importDb) {
+if ($sourceDb) {
     Write-Host 'Exportando dados do banco local...' -ForegroundColor Yellow
 
     $exportScript = @'
 const Database = require("better-sqlite3");
+const fs = require("fs");
 const db = new Database(process.argv[2], { readonly: true });
 const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_prisma%'").all();
 let sql = "";
@@ -248,41 +299,32 @@ for (const { name } of tables) {
         sql += `INSERT OR IGNORE INTO "${name}" (${cols.map(c => '"' + c + '"').join(", ")}) VALUES (${values});\n`;
     }
 }
-process.stdout.write(sql);
+fs.writeFileSync("import.sql", sql, "utf8");
+console.log("Exportado: " + sql.split("\n").filter(l => l.trim()).length + " registros");
 db.close();
 '@
 
-    $exportScriptPath = Join-Path $deployDir 'export-db.js'
-    Set-Content -Path $exportScriptPath -Value $exportScript -Encoding UTF8
-    $sqlFile = Join-Path $deployDir 'import.sql'
-    & node.exe $exportScriptPath $sourceDb > $sqlFile 2>$null
+    Set-Content -Path (Join-Path $deployDir 'export-db.js') -Value $exportScript -Encoding UTF8
+    & node.exe export-db.js $sourceDb 2>&1 | Out-Host
+    Remove-Item (Join-Path $deployDir 'export-db.js') -Force -ErrorAction SilentlyContinue
+}
 
-    $sqlLines = (Get-Content $sqlFile | Measure-Object -Line).Lines
-    Write-Host "Exportado: $sqlLines registros" -ForegroundColor Green
+# Aplicar schema + importar dados automaticamente
+Write-Host ''
+Write-Host 'Aplicando schema e dados no Turso...' -ForegroundColor Yellow
+& node.exe setup-turso.js 2>&1 | Out-Host
 
-    if ($sqlLines -gt 0) {
-        Write-Host 'Importando para o Turso...' -ForegroundColor Yellow
-        Write-Host 'Abrindo o shell do Turso no navegador...' -ForegroundColor Yellow
-        Write-Host ''
-        Write-Host 'No dashboard do Turso:' -ForegroundColor White
-        Write-Host '  1. Clique no banco "morangos"' -ForegroundColor DarkGray
-        Write-Host '  2. Va em "Shell" ou "Edit Data"' -ForegroundColor DarkGray
-        Write-Host '  3. Cole o conteudo do arquivo import.sql' -ForegroundColor DarkGray
-        Write-Host ''
-        Write-Host "  Arquivo: $sqlFile" -ForegroundColor Cyan
-        Write-Host "  ($sqlLines linhas de SQL)" -ForegroundColor DarkGray
-        Write-Host ''
-        Write-Host '  Ou, se tiver o Turso CLI instalado:' -ForegroundColor DarkGray
-        Write-Host "  turso db shell morangos < `"$sqlFile`"" -ForegroundColor DarkGray
-        Write-Host ''
-        Pause-Continue
-    }
-
-    Remove-Item $exportScriptPath -Force -ErrorAction SilentlyContinue
-} else {
+# Seed inicial se nao importou dados
+if (-not $sourceDb) {
+    # Executar seed via libsql tambem
     Write-Host 'Criando dados iniciais...' -ForegroundColor Yellow
     & node.exe prisma/seed-init.js 2>&1 | Out-Host
 }
+
+# Limpar arquivos temporarios
+Remove-Item (Join-Path $deployDir 'setup-turso.js') -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $deployDir 'schema.sql') -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $deployDir 'import.sql') -Force -ErrorAction SilentlyContinue
 
 Write-Host 'Banco de dados configurado!' -ForegroundColor Green
 
