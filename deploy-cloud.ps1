@@ -1,6 +1,6 @@
 # ============================================================
 # DEPLOY MORANGOS NA NUVEM (Vercel + Turso)
-# Guia interativo para leigos ??" faz tudo passo a passo
+# Guia interativo para leigos   - faz tudo passo a passo
 # ============================================================
 
 $ErrorActionPreference = "Continue"
@@ -8,7 +8,7 @@ $ErrorActionPreference = "Continue"
 function Show-Step($num, $title) {
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "  PASSO $num ??" $title" -ForegroundColor Cyan
+    Write-Host "  PASSO $num   - $title" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
 }
@@ -19,13 +19,15 @@ function Pause-Continue {
 }
 
 function Refresh-Path {
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+    $machinePath = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $userPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
+    $env:Path = $machinePath + ';' + $userPath
 }
 
 Clear-Host
 Write-Host ""
 Write-Host "  ========================================" -ForegroundColor Green
-Write-Host "  MORANGOS ??" DEPLOY NA NUVEM" -ForegroundColor Green
+Write-Host "  MORANGOS   - DEPLOY NA NUVEM" -ForegroundColor Green
 Write-Host "  ========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Este script vai colocar o app online" -ForegroundColor White
@@ -41,7 +43,7 @@ Write-Host ""
 Pause-Continue
 
 # ============================================================
-# PASSO 1 ??" VERIFICAR/INSTALAR NODE.JS
+# PASSO 1   - VERIFICAR/INSTALAR NODE.JS
 # ============================================================
 Show-Step 1 "VERIFICAR NODE.JS"
 
@@ -63,7 +65,7 @@ try {
 }
 
 # ============================================================
-# PASSO 2 ??" VERIFICAR/INSTALAR TURSO CLI
+# PASSO 2   - VERIFICAR/INSTALAR TURSO CLI
 # ============================================================
 Show-Step 2 "INSTALAR TURSO CLI"
 
@@ -97,7 +99,7 @@ if (-not $tursoInstalled) {
 }
 
 # ============================================================
-# PASSO 3 ??" VERIFICAR/INSTALAR VERCEL CLI
+# PASSO 3   - VERIFICAR/INSTALAR VERCEL CLI
 # ============================================================
 Show-Step 3 "INSTALAR VERCEL CLI"
 
@@ -118,7 +120,7 @@ if (-not $vercelInstalled) {
 }
 
 # ============================================================
-# PASSO 4 ??" CRIAR CONTA E LOGIN NO TURSO
+# PASSO 4   - CRIAR CONTA E LOGIN NO TURSO
 # ============================================================
 Show-Step 4 "CRIAR CONTA NO TURSO"
 
@@ -135,7 +137,7 @@ Write-Host ""
 Write-Host "Login no Turso concluido!" -ForegroundColor Green
 
 # ============================================================
-# PASSO 5 ??" CRIAR BANCO DE DADOS
+# PASSO 5   - CRIAR BANCO DE DADOS
 # ============================================================
 Show-Step 5 "CRIAR BANCO DE DADOS"
 
@@ -168,7 +170,7 @@ if (-not $tursoUrl -or -not $tursoToken) {
 }
 
 # ============================================================
-# PASSO 6 ??" BAIXAR O CODIGO
+# PASSO 6   - BAIXAR O CODIGO
 # ============================================================
 Show-Step 6 "BAIXAR O CODIGO"
 
@@ -192,7 +194,7 @@ if (Test-Path $deployDir) {
 Write-Host "Codigo baixado!" -ForegroundColor Green
 
 # ============================================================
-# PASSO 7 ??" INSTALAR DEPENDENCIAS
+# PASSO 7   - INSTALAR DEPENDENCIAS
 # ============================================================
 Show-Step 7 "INSTALAR DEPENDENCIAS"
 
@@ -201,7 +203,7 @@ Write-Host "Instalando dependencias (pode demorar 1-2 min)..." -ForegroundColor 
 Write-Host "Dependencias instaladas!" -ForegroundColor Green
 
 # ============================================================
-# PASSO 8 ??" CONFIGURAR VARIAVEIS DE AMBIENTE
+# PASSO 8   - CONFIGURAR VARIAVEIS DE AMBIENTE
 # ============================================================
 Show-Step 8 "CONFIGURAR VARIAVEIS"
 
@@ -218,7 +220,7 @@ Set-Content -Path (Join-Path $deployDir ".env") -Value $envContent -Encoding UTF
 Write-Host "Arquivo .env criado!" -ForegroundColor Green
 
 # ============================================================
-# PASSO 9 ??" CONFIGURAR BANCO DE DADOS
+# PASSO 9   - CONFIGURAR BANCO DE DADOS
 # ============================================================
 Show-Step 9 "CONFIGURAR BANCO DE DADOS"
 
@@ -355,7 +357,7 @@ db.close();
 Write-Host "Banco de dados configurado!" -ForegroundColor Green
 
 # ============================================================
-# PASSO 10 ??" DEPLOY NA VERCEL
+# PASSO 10   - DEPLOY NA VERCEL
 # ============================================================
 Show-Step 10 "DEPLOY NA VERCEL"
 
@@ -403,12 +405,12 @@ Write-Host "Redeployando com as variaveis configuradas..." -ForegroundColor Yell
 & npx.cmd vercel --prod --yes 2>&1 | Out-Host
 
 # ============================================================
-# PASSO 11 ??" CONFIGURACAO GOOGLE MAPS (OPCIONAL)
+# PASSO 11   - CONFIGURACAO GOOGLE MAPS (OPCIONAL)
 # ============================================================
 Show-Step 11 "GOOGLE MAPS (OPCIONAL)"
 
 Write-Host "O app usa o Google Maps para otimizar rotas de entrega." -ForegroundColor White
-Write-Host "Isso e opcional ??" o app funciona sem ele." -ForegroundColor DarkGray
+Write-Host "Isso e opcional   - o app funciona sem ele." -ForegroundColor DarkGray
 Write-Host ""
 $configurarMaps = Read-Host "Deseja configurar o Google Maps agora? (S/N)"
 
@@ -441,7 +443,7 @@ if ($configurarMaps -eq "S" -or $configurarMaps -eq "s") {
 }
 
 # ============================================================
-# PASSO 12 ??" OBTER URL FINAL
+# PASSO 12   - OBTER URL FINAL
 # ============================================================
 Show-Step 12 "PRONTO!"
 
@@ -464,7 +466,7 @@ Write-Host ""
 Write-Host "  Primeiro acesso:" -ForegroundColor White
 Write-Host "  1. Abra a URL no navegador" -ForegroundColor DarkGray
 Write-Host "  2. Crie o usuario administrador" -ForegroundColor DarkGray
-Write-Host "  3. Pronto ??" use de qualquer lugar!" -ForegroundColor DarkGray
+Write-Host "  3. Pronto   - use de qualquer lugar!" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  Dados salvos:" -ForegroundColor White
 Write-Host "  - Banco: Turso (morangos)" -ForegroundColor DarkGray
@@ -475,7 +477,7 @@ Write-Host "  Para atualizar no futuro:" -ForegroundColor Yellow
 Write-Host "  Qualquer git push na branch 'cloud'" -ForegroundColor DarkGray
 Write-Host "  atualiza o app automaticamente." -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "  Custo: R$ 0/mes (plano gratuito)" -ForegroundColor Green
+Write-Host '  Custo: R$ 0/mes (plano gratuito)' -ForegroundColor Green
 Write-Host ""
 Read-Host "Pressione Enter para fechar"
 
