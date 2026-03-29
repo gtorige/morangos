@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "../../../../../auth";
+import { withAuth, parseBody, parseId } from "@/lib/api-helpers";
+import { promocaoUpdateSchema } from "@/lib/schemas";
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { id } = await params;
+    const idNum = parseId(id);
+
     const promocao = await prisma.promocao.findUnique({
-      where: { id: Number(id) },
+      where: { id: idNum },
       include: { produto: true },
     });
 
@@ -26,62 +24,37 @@ export async function GET(
     }
 
     return NextResponse.json(promocao);
-  } catch (error) {
-    console.error("Erro ao buscar promoção:", error);
-    return NextResponse.json(
-      { error: "Erro ao buscar promoção" },
-      { status: 500 }
-    );
-  }
+  });
 }
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { id } = await params;
-    const body = await request.json();
-    const { nome, produtoId, tipo, precoPromocional, leveQuantidade, pagueQuantidade, quantidadeMinima, produtoId2, dataInicio, dataFim, ativo } = body;
+    const idNum = parseId(id);
+    const data = await parseBody(request, promocaoUpdateSchema);
+
     const promocao = await prisma.promocao.update({
-      where: { id: Number(id) },
-      data: { nome, produtoId, tipo, precoPromocional, leveQuantidade, pagueQuantidade, quantidadeMinima: quantidadeMinima ?? null, produtoId2: produtoId2 ?? null, dataInicio, dataFim, ativo },
+      where: { id: idNum },
+      data,
       include: { produto: true },
     });
 
     return NextResponse.json(promocao);
-  } catch (error) {
-    console.error("Erro ao atualizar promoção:", error);
-    return NextResponse.json(
-      { error: "Erro ao atualizar promoção" },
-      { status: 500 }
-    );
-  }
+  });
 }
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { id } = await params;
-    await prisma.promocao.delete({ where: { id: Number(id) } });
+    const idNum = parseId(id);
+
+    await prisma.promocao.delete({ where: { id: idNum } });
     return NextResponse.json({ message: "Promoção excluída com sucesso" });
-  } catch (error) {
-    console.error("Erro ao excluir promoção:", error);
-    return NextResponse.json(
-      { error: "Erro ao excluir promoção" },
-      { status: 500 }
-    );
-  }
+  });
 }

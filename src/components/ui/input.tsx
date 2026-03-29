@@ -13,6 +13,7 @@ function Input({ className, type, onClick, ...props }: React.ComponentProps<"inp
   return (
     <InputPrimitive
       type={type}
+      lang={type === "date" || type === "time" ? "pt-BR" : undefined}
       onClick={handleClick}
       data-slot="input"
       className={cn(

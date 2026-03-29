@@ -16,7 +16,12 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Plus, Trash2, Save, ArrowLeft, RotateCcw, Check } from "lucide-react";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { calcSubtotal as calcSubtotalBase } from "@/lib/pedido-utils";
+import { formatPrice } from "@/lib/formatting";
+import type { Produto, FormaPagamento, Promocao, ItemPedidoForm } from "@/lib/types";
+
+type ItemPedido = ItemPedidoForm;
 
 interface Cliente {
   id: number;
@@ -26,44 +31,6 @@ interface Cliente {
   numero: string;
   bairro: string;
   cidade: string;
-}
-
-interface Produto {
-  id: number;
-  nome: string;
-  preco: number;
-}
-
-interface FormaPagamento {
-  id: number;
-  nome: string;
-}
-
-interface Promocao {
-  id: number;
-  nome: string;
-  produtoId: number;
-  tipo: string;
-  precoPromocional: number;
-  leveQuantidade: number | null;
-  pagueQuantidade: number | null;
-  quantidadeMinima: number | null;
-  produtoId2: number | null;
-  dataInicio: string;
-  dataFim: string;
-  ativo: boolean;
-}
-
-interface ItemPedido {
-  produtoId: string;
-  quantidade: string;
-  precoUnitario: number;
-  subtotal: number;
-  precoManual: boolean;
-}
-
-function formatPrice(value: number): string {
-  return `R$ ${value.toFixed(2).replace(".", ",")}`;
 }
 
 export default function NovoPedidoPage() {
@@ -481,6 +448,7 @@ export default function NovoPedidoPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb items={[{ label: "Pedidos", href: "/pedidos" }, { label: "Novo Pedido" }]} />
       <div className="flex items-center gap-4">
         <Link href="/pedidos">
           <Button variant="ghost" size="icon">

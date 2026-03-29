@@ -20,7 +20,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, Store } from "lucide-react";
+import { Plus, Trash2, Store, Search } from "lucide-react";
+import { TableSkeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 
 interface Fornecedor {
   id: number;
@@ -31,6 +33,7 @@ interface Fornecedor {
 export default function FornecedoresPage() {
   const [items, setItems] = useState<Fornecedor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [busca, setBusca] = useState("");
   const [nome, setNome] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -117,7 +120,7 @@ export default function FornecedoresPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Store className="size-5" />
-          <h1 className="text-2xl font-bold">Fornecedores</h1>
+          <h1 className="text-2xl font-semibold">Fornecedores</h1>
         </div>
         <Button onClick={openNew}>
           <Plus className="size-4" />
@@ -125,37 +128,28 @@ export default function FornecedoresPage() {
         </Button>
       </div>
 
-      <div className="rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nome</TableHead>
-              <TableHead className="text-center">Contas</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
+      <div className="relative flex-1">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input placeholder="Buscar fornecedores..." className="pl-9" value={busca} onChange={e => setBusca(e.target.value)} />
+      </div>
+
+      {loading ? (
+        <TableSkeleton rows={5} cols={3} />
+      ) : items.filter(i => i.nome.toLowerCase().includes(busca.toLowerCase())).length === 0 ? (
+        <EmptyState icon={Store} title="Nenhum fornecedor cadastrado" actionLabel="+ Novo Fornecedor" onAction={() => openNew()} />
+      ) : (
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell
-                  colSpan={3}
-                  className="text-center py-8 text-muted-foreground"
-                >
-                  Carregando...
-                </TableCell>
+                <TableHead>Nome</TableHead>
+                <TableHead className="text-center">Contas</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
-            ) : items.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={3}
-                  className="text-center py-8 text-muted-foreground"
-                >
-                  Nenhum fornecedor cadastrado
-                </TableCell>
-              </TableRow>
-            ) : (
-              items.map((item) => (
-                <TableRow key={item.id} className="cursor-pointer hover:bg-accent/50 transition-colors" onDoubleClick={() => openEdit(item)}>
+            </TableHeader>
+            <TableBody>
+              {items.filter(i => i.nome.toLowerCase().includes(busca.toLowerCase())).map((item) => (
+                <TableRow key={item.id} className="cursor-pointer" onDoubleClick={() => openEdit(item)}>
                   <TableCell className="font-medium">{item.nome}</TableCell>
                   <TableCell className="text-center">
                     <Badge variant="outline">{item._count.contas}</Badge>
@@ -165,13 +159,7 @@ export default function FornecedoresPage() {
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => openEdit(item)}
-                      >
-                        <Pencil className="size-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
+                        title="Excluir"
                         onClick={() => handleDelete(item.id)}
                       >
                         <Trash2 className="size-4 text-destructive" />
@@ -179,11 +167,11 @@ export default function FornecedoresPage() {
                     </div>
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">

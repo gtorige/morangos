@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "../../../../auth";
+import { withAuth } from "@/lib/api-helpers";
 
 export async function GET(request: NextRequest) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q");
 
@@ -39,8 +34,5 @@ export async function GET(request: NextRequest) {
     ]);
 
     return NextResponse.json({ clientes, produtos });
-  } catch (error) {
-    console.error("Erro ao buscar:", error);
-    return NextResponse.json({ error: "Erro ao buscar" }, { status: 500 });
-  }
+  });
 }

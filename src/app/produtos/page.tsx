@@ -19,13 +19,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Pencil, Trash2, Package, Download } from "lucide-react";
-
-interface Produto {
-  id: number;
-  nome: string;
-  preco: number;
-}
+import { Plus, Trash2, Package, Download } from "lucide-react";
+import { formatCurrency as formatPreço } from "@/lib/formatting";
+import { TableSkeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
+import type { Produto } from "@/lib/types";
 
 const emptyForm = {
   nome: "",
@@ -151,13 +149,6 @@ export default function ProdutosPage() {
     }
   }
 
-  function formatPreço(valor: number) {
-    return valor.toLocaleString("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    });
-  }
-
   function exportCSV() {
     const header = 'Nome;Preco';
     const rows = produtos.map(p => '"' + p.nome.replace(/"/g, '""') + '";' + p.preco.toFixed(2).replace('.', ','));
@@ -236,11 +227,9 @@ export default function ProdutosPage() {
       </div>
 
       {loading ? (
-        <p className="text-center text-muted-foreground">Carregando...</p>
+        <TableSkeleton rows={5} cols={3} />
       ) : produtos.length === 0 ? (
-        <p className="text-center text-muted-foreground">
-          Nenhum produto encontrado.
-        </p>
+        <EmptyState icon={Package} title="Nenhum produto cadastrado" actionLabel="+ Novo Produto" onAction={() => handleNew()} />
       ) : (
         <div className="overflow-x-auto">
           <Table>
@@ -253,7 +242,7 @@ export default function ProdutosPage() {
             </TableHeader>
             <TableBody>
               {produtos.map((produto) => (
-                <TableRow key={produto.id} className="cursor-pointer hover:bg-accent/50 transition-colors" onDoubleClick={() => handleEdit(produto)}>
+                <TableRow key={produto.id} className="cursor-pointer" onDoubleClick={() => handleEdit(produto)}>
                   <TableCell className="font-medium" onClick={(e) => e.stopPropagation()}>
                     {editingCell?.id === produto.id && editingCell?.field === "nome" ? (
                       <input
@@ -306,16 +295,10 @@ export default function ProdutosPage() {
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => handleEdit(produto)}
-                      >
-                        <Pencil className="size-4" />
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="icon-sm"
+                        title="Excluir"
                         onClick={() => handleDelete(produto.id)}
                       >
-                        <Trash2 className="size-4" />
+                        <Trash2 className="size-4 text-destructive" />
                       </Button>
                     </div>
                   </TableCell>

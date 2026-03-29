@@ -6,6 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { TableSkeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { TabsNav, type TabItem } from "@/components/ui/tabs-nav";
 import {
   Card,
   CardContent,
@@ -41,50 +45,16 @@ import {
   ChevronUp,
   ChevronDown,
   Download,
+  MoreHorizontal,
+  Search,
 } from "lucide-react";
 import { calcSubtotal as calcSubtotalBase } from "@/lib/pedido-utils";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { NovoPedidoSheet, NovoPedidoInitialData } from "@/components/novo-pedido-sheet";
+import { formatPrice, formatDate, todayStr, dateToStr } from "@/lib/formatting";
+import type { Produto, FormaPagamento, Promocao, PedidoItem, ItemPedidoForm } from "@/lib/types";
 
-interface Produto {
-  id: number;
-  nome: string;
-  preco: number;
-}
-
-interface FormaPagamento {
-  id: number;
-  nome: string;
-}
-
-interface Promocao {
-  id: number;
-  nome: string;
-  produtoId: number;
-  tipo: string;
-  precoPromocional: number;
-  leveQuantidade: number | null;
-  pagueQuantidade: number | null;
-  dataInicio: string;
-  dataFim: string;
-  ativo: boolean;
-}
-
-interface EditItem {
-  produtoId: string;
-  quantidade: string;
-  precoUnitario: number;
-  subtotal: number;
-  precoManual: boolean;
-}
-
-interface PedidoItem {
-  id: number;
-  produtoId: number;
-  quantidade: number;
-  precoUnitario: number;
-  subtotal: number;
-  produto: { id: number; nome: string; preco: number };
-}
+type EditItem = ItemPedidoForm;
 
 interface Pedido {
   id: number;
@@ -104,8 +74,6 @@ interface Pedido {
   formaPagamento: { id: number; nome: string } | null;
   itens: PedidoItem[];
 }
-
-function todayStr() { return new Date().toISOString().slice(0, 10) }
 
 interface Filters {
   clientes: string[];
@@ -161,16 +129,6 @@ const COLUNAS_DEFAULT: { key: ColKey; label: string; defaultVisible?: boolean }[
   { key: 'data', label: 'Data' },
 ];
 
-function formatPrice(value: number): string {
-  return `R$ ${value.toFixed(2).replace(".", ",")}`;
-}
-
-function formatDate(dateStr: string): string {
-  if (!dateStr) return "";
-  const [year, month, day] = dateStr.split("-");
-  return `${day}/${month}/${year}`;
-}
-
 type StatusTab = "todos" | "concluidos" | "pendente_pgto" | "pendente_tudo";
 type SortField = "id" | "cliente" | "bairro" | "total" | "pgto" | "formaPgto" | "entrega" | "data";
 type SortDir = "asc" | "desc";
@@ -188,8 +146,6 @@ function getSunday(monday: Date) {
   d.setDate(d.getDate() + 6);
   return d;
 }
-
-function dateToStr(d: Date) { return d.toISOString().slice(0, 10); }
 
 function PedidosPageInner() {
   const searchParams = useSearchParams();
@@ -213,6 +169,7 @@ function PedidosPageInner() {
     return defaultFilters;
   });
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [busca, setBusca] = useState("");
   const [tab, setTab] = useState<StatusTab>(() => {
     if (typeof window === "undefined") return "todos";
     return (localStorage.getItem("pedidos-tab") as StatusTab) || "todos";
@@ -806,27 +763,11 @@ function PedidosPageInner() {
   function getPagamentoBadge(situacao: string, statusEntrega?: string) {
     // Pagamento só é relevante após entrega
     if (statusEntrega && statusEntrega !== "Entregue") return null;
-    switch (situacao) {
-      case "Pago":
-        return <Badge className="bg-green-600 text-white">Pago</Badge>;
-      case "Pendente":
-      default:
-        return <Badge className="bg-red-600 text-white">Pendente</Badge>;
-    }
+    return <StatusBadge status={situacao} context="pagamento" />;
   }
 
   function getEntregaBadge(status: string) {
-    switch (status) {
-      case "Entregue":
-        return <Badge className="bg-green-600 text-white">Entregue</Badge>;
-      case "Em rota":
-        return <Badge className="bg-blue-600 text-white">Em rota</Badge>;
-      case "Cancelado":
-        return <Badge className="bg-red-600 text-white">Cancelado</Badge>;
-      case "Pendente":
-      default:
-        return <Badge className="bg-gray-500 text-white">Pendente</Badge>;
-    }
+    return <StatusBadge status={status} context="entrega" />;
   }
 
   function toggleSort(field: SortField) {
@@ -885,6 +826,14 @@ function PedidosPageInner() {
 
   const filteredByTab = pedidos.filter((p) => {
     if (filters.formasPagamento.length > 0 && !filters.formasPagamento.includes(p.formaPagamentoId)) return false;
+    // Text search: match client name, product name, or order ID
+    if (busca.trim()) {
+      const q = busca.trim().toLowerCase();
+      const matchCliente = p.cliente?.nome?.toLowerCase().includes(q);
+      const matchProduto = p.itens?.some(i => i.produto?.nome?.toLowerCase().includes(q));
+      const matchId = String(p.id).includes(q);
+      if (!matchCliente && !matchProduto && !matchId) return false;
+    }
     switch (tab) {
       case "concluidos":
         return p.statusEntrega === "Entregue" && p.situacaoPagamento === "Pago";
@@ -974,31 +923,62 @@ function PedidosPageInner() {
         </Button>
       </div>
 
-      {/* Status Tabs */}
-      <div className="flex gap-1 border-b border-border pb-0 overflow-x-auto">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-              tab === t.key
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.label}
-            <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full ${
-              tab === t.key ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-            }`}>
-              {t.count}
-            </span>
-          </button>
-        ))}
+      {/* Search bar + filter toggle */}
+      <div className="flex gap-2 items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por cliente, produto ou #pedido..."
+            className="pl-9"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+        </div>
+        <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 shrink-0" onClick={() => setFiltersOpen(!filtersOpen)}>
+          <Filter className="size-3.5" />
+          Filtros
+        </Button>
       </div>
+
+      {/* Active filter chips */}
+      {(() => {
+        const chips: { label: string; onRemove: () => void }[] = [];
+        if (busca.trim()) chips.push({ label: `Busca: ${busca.trim()}`, onRemove: () => setBusca("") });
+        if (filters.clientes.length > 0) filters.clientes.forEach(c => chips.push({ label: `Cliente: ${c}`, onRemove: () => setFilters(f => ({ ...f, clientes: f.clientes.filter(x => x !== c) })) }));
+        if (filters.bairros.length > 0) filters.bairros.forEach(b => chips.push({ label: `Bairro: ${b}`, onRemove: () => setFilters(f => ({ ...f, bairros: f.bairros.filter(x => x !== b) })) }));
+        if (filters.formasPagamento.length > 0) {
+          filters.formasPagamento.forEach(id => {
+            const fp = uniqueFormasPag.find(f => f.id === id);
+            chips.push({ label: `F. Pgto: ${fp?.nome || id}`, onRemove: () => setFilters(f => ({ ...f, formasPagamento: f.formasPagamento.filter(x => x !== id) })) });
+          });
+        }
+        if (filters.situacaoPagamento) chips.push({ label: `Pgto: ${filters.situacaoPagamento}`, onRemove: () => setFilters(f => ({ ...f, situacaoPagamento: "" })) });
+        if (filters.valorMin) chips.push({ label: `Min: R$ ${filters.valorMin}`, onRemove: () => setFilters(f => ({ ...f, valorMin: "" })) });
+        if (filters.valorMax) chips.push({ label: `Max: R$ ${filters.valorMax}`, onRemove: () => setFilters(f => ({ ...f, valorMax: "" })) });
+        if (filters.recorrente) chips.push({ label: `Recorrente: ${filters.recorrente === "sim" ? "Sim" : "Não"}`, onRemove: () => setFilters(f => ({ ...f, recorrente: "" })) });
+        if (chips.length === 0) return null;
+        return (
+          <div className="flex flex-wrap gap-1.5">
+            {chips.map((chip, i) => (
+              <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-primary/15 text-primary border border-primary/30">
+                {chip.label}
+                <button onClick={chip.onRemove} className="opacity-60 hover:opacity-100"><X className="size-3" /></button>
+              </span>
+            ))}
+            <button onClick={() => { handleClearFilters(); setBusca(""); }} className="px-2.5 py-1 rounded-full text-xs border border-border text-muted-foreground hover:text-foreground transition-colors">
+              Limpar filtros
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Date range shortcuts */}
       <div className="flex flex-wrap gap-1.5">
         {[
+          { label: "Ontem", fn: () => {
+            const d = new Date(); d.setDate(d.getDate() - 1); const s = dateToStr(d);
+            setFilters(f => ({ ...f, dataInicio: s, dataFim: s }));
+          }},
           { label: "Hoje", fn: () => { const t = todayStr(); setFilters(f => ({ ...f, dataInicio: t, dataFim: t })) } },
           { label: "Semana", fn: () => {
             const mon = getMonday(new Date());
@@ -1015,6 +995,10 @@ function PedidosPageInner() {
             const d = new Date(); const y = d.getFullYear(); const m = d.getMonth();
             setFilters(f => ({ ...f, dataInicio: dateToStr(new Date(y,m,1)), dataFim: dateToStr(new Date(y,m+1,0)) }));
           }},
+          { label: "Últimos 7 dias", fn: () => {
+            const end = new Date(); const start = new Date(); start.setDate(end.getDate() - 6);
+            setFilters(f => ({ ...f, dataInicio: dateToStr(start), dataFim: dateToStr(end) }));
+          }},
           { label: "Todos", fn: () => { setFilters(f => ({ ...f, dataInicio: "", dataFim: "" })) } },
         ].map((s) => (
           <Button key={s.label} variant="outline" size="sm" onClick={s.fn} className="h-7 text-xs">
@@ -1028,18 +1012,17 @@ function PedidosPageInner() {
         )}
       </div>
 
-      <Card>
-        <CardHeader
-          className="cursor-pointer"
-          onClick={() => setFiltersOpen(!filtersOpen)}
-        >
+      {/* Status Tabs */}
+      <TabsNav items={tabs} value={tab} onChange={(key) => setTab(key as StatusTab)} />
+
+      <Card className={filtersOpen ? "" : "hidden"}>
+        <CardHeader>
           <div className="flex items-center gap-2">
             <Filter className="size-4" />
-            <CardTitle>Filtros</CardTitle>
+            <CardTitle>Filtros Avançados</CardTitle>
           </div>
         </CardHeader>
-        {filtersOpen && (
-          <CardContent>
+        <CardContent>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               <div className="space-y-2">
                 <Label>Cliente</Label>
@@ -1226,15 +1209,12 @@ function PedidosPageInner() {
               Limpar filtros
             </Button>
           </CardContent>
-        )}
       </Card>
 
       {loading ? (
-        <p className="text-center text-muted-foreground">Carregando...</p>
+        <TableSkeleton rows={6} cols={5} />
       ) : filteredByTab.length === 0 ? (
-        <p className="text-center text-muted-foreground py-8">
-          Nenhum pedido nesta categoria.
-        </p>
+        <EmptyState icon={ClipboardList} title="Nenhum pedido nesta categoria." />
       ) : (
         <>
         {/* Floating bulk action bar */}
@@ -1346,7 +1326,7 @@ function PedidosPageInner() {
               </div>
               {/* Card header - clickable to edit */}
               <div
-                className="p-3 pr-8 cursor-pointer hover:bg-accent/50 transition-colors"
+                className="p-3 pr-8 cursor-pointer transition-colors"
                 onClick={() => setDrawerPedidoId(pedido.id)}
               >
                 <div className="flex items-center justify-between">
@@ -1392,20 +1372,29 @@ function PedidosPageInner() {
                   <Copy className="size-3.5" />
                   Duplicar
                 </button>
-                <button
-                  className="flex-1 flex items-center justify-center gap-1 py-2 text-xs text-muted-foreground hover:bg-accent/50 transition-colors"
-                  onClick={() => setDrawerPedidoId(pedido.id)}
-                >
-                  <Pencil className="size-3.5" />
-                  Editar
-                </button>
-                <button
-                  className="flex-1 flex items-center justify-center gap-1 py-2 text-xs text-red-400 hover:bg-red-400/10 transition-colors"
-                  onClick={() => handleDelete(pedido.id)}
-                >
-                  <Trash2 className="size-3.5" />
-                  Excluir
-                </button>
+                <Popover>
+                  <PopoverTrigger
+                    render={
+                      <button className="flex-1 flex items-center justify-center gap-1 py-2 text-xs text-muted-foreground hover:bg-accent/50 transition-colors" />
+                    }
+                  >
+                    <MoreHorizontal className="size-3.5" />
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-40 p-1">
+                    <button
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent transition-colors"
+                      onClick={() => setDrawerPedidoId(pedido.id)}
+                    >
+                      <Pencil className="size-4" /> Editar
+                    </button>
+                    <button
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-destructive hover:bg-accent transition-colors"
+                      onClick={() => handleDelete(pedido.id)}
+                    >
+                      <Trash2 className="size-4" /> Excluir
+                    </button>
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
           ))}
@@ -1507,10 +1496,12 @@ function PedidosPageInner() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredByTab.map((pedido) => (
+                {filteredByTab.map((pedido) => {
+                  const isCompleted = pedido.statusEntrega === "Entregue" && pedido.situacaoPagamento === "Pago";
+                  return (
                   <TableRow
                     key={pedido.id}
-                    className={`cursor-pointer hover:bg-accent/50 transition-colors ${selectedIds.has(pedido.id) ? 'bg-primary/5' : ''}`}
+                    className={`cursor-pointer transition-colors ${selectedIds.has(pedido.id) ? 'bg-primary/5' : ''} ${isCompleted ? 'opacity-50' : ''}`}
                     onDoubleClick={() => setDrawerPedidoId(pedido.id)}
                   >
                     <TableCell onClick={(e) => e.stopPropagation()}>
@@ -1605,29 +1596,17 @@ function PedidosPageInner() {
                     })}
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
-                        {pedido.statusEntrega === 'Entregue' && pedido.situacaoPagamento !== 'Pago' && (
-                          <Button variant="ghost" size="sm" onClick={() => handleMarkPago(pedido)} title="Marcar como Pago">
-                            <CreditCard className="size-4" />Pago
-                          </Button>
-                        )}
-                        {pedido.statusEntrega !== 'Entregue' && (
-                          <Button variant="ghost" size="sm" onClick={() => handleMarkEntregue(pedido)} title="Marcar como Entregue">
-                            <Check className="size-4" />Entregue
-                          </Button>
-                        )}
                         <Button variant="ghost" size="icon-sm" onClick={() => handleDuplicar(pedido.id)} title="Duplicar">
                           <Copy className="size-4" />
                         </Button>
-                        <Button variant="ghost" size="icon-sm" title="Editar" onClick={() => setDrawerPedidoId(pedido.id)}>
-                          <Pencil className="size-4" />
-                        </Button>
-                        <Button variant="destructive" size="icon-sm" onClick={() => handleDelete(pedido.id)} title="Excluir">
-                          <Trash2 className="size-4" />
+                        <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(pedido.id)} title="Excluir">
+                          <Trash2 className="size-4 text-destructive" />
                         </Button>
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
               <tfoot className="sticky bottom-0 bg-card border-t border-border">
                 <tr>

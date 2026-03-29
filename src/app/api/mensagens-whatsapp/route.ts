@@ -1,21 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "../../../../auth";
+import { withAuth, parseBody } from "@/lib/api-helpers";
+import { mensagemWhatsAppSchema } from "@/lib/schemas";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-  const mensagens = await prisma.mensagemWhatsApp.findMany({ orderBy: { id: "asc" } });
-  return NextResponse.json(mensagens);
+  return withAuth(async () => {
+    const mensagens = await prisma.mensagemWhatsApp.findMany({
+      orderBy: { id: "asc" },
+    });
+    return NextResponse.json(mensagens);
+  });
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-  const { nome, texto } = await request.json();
-  if (!nome?.trim() || !texto?.trim()) {
-    return NextResponse.json({ error: "Nome e texto são obrigatórios." }, { status: 400 });
-  }
-  const mensagem = await prisma.mensagemWhatsApp.create({ data: { nome: nome.trim(), texto: texto.trim() } });
-  return NextResponse.json(mensagem, { status: 201 });
+  return withAuth(async () => {
+    const data = await parseBody(request, mensagemWhatsAppSchema);
+    const mensagem = await prisma.mensagemWhatsApp.create({
+      data: { nome: data.nome.trim(), texto: data.texto.trim() },
+    });
+    return NextResponse.json(mensagem, { status: 201 });
+  });
 }

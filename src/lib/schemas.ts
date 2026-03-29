@@ -1,0 +1,211 @@
+import { z } from "zod";
+
+// ─── Reusable primitives ────────────────────────────────────────────────
+
+const str = (max = 500) => z.string().max(max);
+const reqStr = (max = 500) => str(max).min(1);
+const optStr = (max = 500) => str(max).optional().default("");
+const posInt = () => z.number().int().positive();
+const posFloat = () => z.number().positive();
+const dateStr = () =>
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato de data inválido (YYYY-MM-DD)");
+const optDateStr = () => dateStr().optional().nullable();
+const idParam = () =>
+  z.string().transform((v) => {
+    const n = parseInt(v, 10);
+    if (isNaN(n) || n <= 0) throw new Error("ID inválido");
+    return n;
+  });
+
+// ─── Cliente ────────────────────────────────────────────────────────────
+
+export const clienteCreateSchema = z.object({
+  nome: reqStr(200),
+  telefone: optStr(20),
+  cep: optStr(10),
+  rua: optStr(200),
+  numero: optStr(20),
+  bairro: optStr(100),
+  cidade: optStr(100),
+  enderecoAlternativo: optStr(500),
+  observacoes: optStr(1000),
+});
+
+export const clienteUpdateSchema = clienteCreateSchema.partial();
+
+// ─── Produto ────────────────────────────────────────────────────────────
+
+export const produtoCreateSchema = z.object({
+  nome: reqStr(200),
+  preco: posFloat(),
+});
+
+export const produtoUpdateSchema = produtoCreateSchema.partial();
+
+// ─── Promoção ───────────────────────────────────────────────────────────
+
+export const tipoPromocao = z.enum([
+  "desconto",
+  "leve_x_pague_y",
+  "quantidade_minima",
+  "compra_casada",
+]);
+
+export const promocaoCreateSchema = z.object({
+  nome: reqStr(200),
+  produtoId: posInt(),
+  tipo: tipoPromocao.default("desconto"),
+  precoPromocional: z.number().min(0).default(0),
+  leveQuantidade: z.number().int().min(0).optional().nullable(),
+  pagueQuantidade: z.number().int().min(0).optional().nullable(),
+  quantidadeMinima: z.number().int().min(0).optional().nullable(),
+  produtoId2: z.number().int().positive().optional().nullable(),
+  dataInicio: dateStr(),
+  dataFim: dateStr(),
+  ativo: z.boolean().default(true),
+});
+
+export const promocaoUpdateSchema = promocaoCreateSchema.partial();
+
+// ─── Pedido ─────────────────────────────────────────────────────────────
+
+export const situacaoPagamento = z.enum(["Pendente", "Pago"]);
+export const statusEntrega = z.enum(["Pendente", "Em rota", "Entregue", "Cancelado"]);
+
+export const pedidoItemInput = z.object({
+  produtoId: posInt(),
+  quantidade: z.number().positive(),
+  precoUnitario: z.number().min(0).optional(),
+  subtotal: z.number().min(0).optional(),
+});
+
+export const pedidoCreateSchema = z.object({
+  clienteId: posInt(),
+  dataEntrega: dateStr().optional(),
+  formaPagamentoId: z.number().int().positive().optional().nullable(),
+  observacoes: optStr(1000),
+  taxaEntrega: z.number().min(0).optional().default(0),
+  itens: z.array(pedidoItemInput).min(1, "Pedido deve ter ao menos um item"),
+});
+
+export const pedidoUpdateSchema = z.object({
+  clienteId: posInt().optional(),
+  dataEntrega: dateStr().optional(),
+  formaPagamentoId: z.number().int().positive().optional().nullable(),
+  observacoes: str(1000).optional(),
+  taxaEntrega: z.number().min(0).optional(),
+  situacaoPagamento: situacaoPagamento.optional(),
+  statusEntrega: statusEntrega.optional(),
+  valorPago: z.number().min(0).optional(),
+  ordemRota: z.number().int().min(0).optional().nullable(),
+  itens: z.array(pedidoItemInput).min(1).optional(),
+});
+
+export const pedidoBulkSchema = z.object({
+  ids: z.array(posInt()).min(1, "IDs são obrigatórios"),
+  action: z.enum([
+    "entregue",
+    "pago",
+    "cancelado",
+    "pendente_entrega",
+    "pendente_pagamento",
+  ]),
+  dataEntrega: dateStr().optional(),
+});
+
+// ─── Conta ──────────────────────────────────────────────────────────────
+
+export const contaCreateSchema = z.object({
+  fornecedorId: z.number().int().positive().optional().nullable(),
+  fornecedorNome: optStr(200),
+  categoria: optStr(100),
+  categoriaId: z.number().int().positive().optional().nullable(),
+  subcategoriaId: z.number().int().positive().optional().nullable(),
+  tipoFinanceiro: optStr(50),
+  valor: z.number(),
+  vencimento: dateStr(),
+  situacao: str(50).optional().default("Pendente"),
+  parcelas: z.number().int().min(1).optional().default(1),
+  parcelaNumero: z.number().int().min(1).optional().default(1),
+  parcelaGrupoId: z.number().int().positive().optional().nullable(),
+});
+
+export const contaUpdateSchema = contaCreateSchema.partial();
+
+// ─── Fornecedor ─────────────────────────────────────────────────────────
+
+export const fornecedorSchema = z.object({
+  nome: reqStr(200),
+});
+
+// ─── Categoria / Subcategoria ───────────────────────────────────────────
+
+export const categoriaSchema = z.object({
+  nome: reqStr(100),
+});
+
+export const subcategoriaCreateSchema = z.object({
+  nome: reqStr(100),
+  categoriaId: posInt(),
+});
+
+// ─── Recorrente ─────────────────────────────────────────────────────────
+
+export const recorrenteItemInput = z.object({
+  produtoId: posInt(),
+  quantidade: z.number().positive(),
+  precoManual: z.number().min(0).optional().nullable(),
+});
+
+export const recorrenteCreateSchema = z.object({
+  clienteId: posInt(),
+  formaPagamentoId: z.number().int().positive().optional().nullable(),
+  diasSemana: reqStr(20),
+  dataInicio: dateStr(),
+  dataFim: optDateStr(),
+  taxaEntrega: z.number().min(0).optional().default(0),
+  observacoes: optStr(1000),
+  skipDate: dateStr().optional().nullable(),
+  itens: z.array(recorrenteItemInput).min(1, "Deve ter ao menos um item"),
+});
+
+export const recorrenteUpdateSchema = recorrenteCreateSchema.partial().extend({
+  ativo: z.boolean().optional(),
+});
+
+// ─── Locais Frequentes ──────────────────────────────────────────────────
+
+export const localFrequenteSchema = z.object({
+  nome: reqStr(200),
+  endereco: optStr(500),
+  plusCode: optStr(50),
+});
+
+// ─── Mensagens WhatsApp ─────────────────────────────────────────────────
+
+export const mensagemWhatsAppSchema = z.object({
+  nome: reqStr(200),
+  texto: reqStr(2000),
+});
+
+// ─── Configurações ──────────────────────────────────────────────────────
+
+export const configuracaoSchema = z.object({
+  chave: reqStr(100),
+  valor: reqStr(2000),
+});
+
+// ─── Helpers ────────────────────────────────────────────────────────────
+
+export { idParam };
+
+export type ClienteCreate = z.infer<typeof clienteCreateSchema>;
+export type ProdutoCreate = z.infer<typeof produtoCreateSchema>;
+export type PedidoCreate = z.infer<typeof pedidoCreateSchema>;
+export type PedidoUpdate = z.infer<typeof pedidoUpdateSchema>;
+export type PedidoItemInput = z.infer<typeof pedidoItemInput>;
+export type PedidoBulk = z.infer<typeof pedidoBulkSchema>;
+export type ContaCreate = z.infer<typeof contaCreateSchema>;
+export type PromocaoCreate = z.infer<typeof promocaoCreateSchema>;
+export type RecorrenteCreate = z.infer<typeof recorrenteCreateSchema>;
+export type RecorrenteItemInput = z.infer<typeof recorrenteItemInput>;

@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "../../../../../auth";
+import { withAuth, parseBody, parseId } from "@/lib/api-helpers";
+import { contaUpdateSchema } from "@/lib/schemas";
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { id } = await params;
+    const idNum = parseId(id);
+
     const conta = await prisma.conta.findUnique({
-      where: { id: Number(id) },
+      where: { id: idNum },
     });
 
     if (!conta) {
@@ -25,61 +23,36 @@ export async function GET(
     }
 
     return NextResponse.json(conta);
-  } catch (error) {
-    console.error("Erro ao buscar conta:", error);
-    return NextResponse.json(
-      { error: "Erro ao buscar conta" },
-      { status: 500 }
-    );
-  }
+  });
 }
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { id } = await params;
-    const body = await request.json();
-    const { fornecedorId, fornecedorNome, categoria, categoriaId, subcategoriaId, tipoFinanceiro, valor, vencimento, situacao, parcelas, parcelaNumero, parcelaGrupoId } = body;
+    const idNum = parseId(id);
+    const data = await parseBody(request, contaUpdateSchema);
+
     const conta = await prisma.conta.update({
-      where: { id: Number(id) },
-      data: { fornecedorId, fornecedorNome, categoria, categoriaId, subcategoriaId: subcategoriaId ?? null, tipoFinanceiro: tipoFinanceiro ?? "", valor, vencimento, situacao, ...(parcelas !== undefined ? { parcelas, parcelaNumero: parcelaNumero ?? 1 } : {}), ...(parcelaGrupoId !== undefined ? { parcelaGrupoId } : {}) },
+      where: { id: idNum },
+      data,
     });
 
     return NextResponse.json(conta);
-  } catch (error) {
-    console.error("Erro ao atualizar conta:", error);
-    return NextResponse.json(
-      { error: "Erro ao atualizar conta" },
-      { status: 500 }
-    );
-  }
+  });
 }
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { id } = await params;
-    await prisma.conta.delete({ where: { id: Number(id) } });
+    const idNum = parseId(id);
+
+    await prisma.conta.delete({ where: { id: idNum } });
     return NextResponse.json({ message: "Conta excluída com sucesso" });
-  } catch (error) {
-    console.error("Erro ao excluir conta:", error);
-    return NextResponse.json(
-      { error: "Erro ao excluir conta" },
-      { status: 500 }
-    );
-  }
+  });
 }

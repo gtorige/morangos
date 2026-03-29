@@ -16,7 +16,13 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Plus, Trash2, Save, ArrowLeft } from "lucide-react";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { calcSubtotal as calcSubtotalBase } from "@/lib/pedido-utils";
+import { formatPrice } from "@/lib/formatting";
+import type { Produto, FormaPagamento, Promocao, Pedido, ItemPedidoForm } from "@/lib/types";
+
+type ItemPedido = ItemPedidoForm;
+type PedidoData = Pedido;
 
 interface Cliente {
   id: number;
@@ -26,67 +32,6 @@ interface Cliente {
   numero: string;
   bairro: string;
   cidade: string;
-}
-
-interface Produto {
-  id: number;
-  nome: string;
-  preco: number;
-}
-
-interface FormaPagamento {
-  id: number;
-  nome: string;
-}
-
-interface Promocao {
-  id: number;
-  nome: string;
-  produtoId: number;
-  tipo: string;
-  precoPromocional: number;
-  leveQuantidade: number | null;
-  pagueQuantidade: number | null;
-  dataInicio: string;
-  dataFim: string;
-  ativo: boolean;
-}
-
-interface ItemPedido {
-  produtoId: string;
-  quantidade: string;
-  precoUnitario: number;
-  subtotal: number;
-  precoManual: boolean;
-}
-
-interface PedidoData {
-  id: number;
-  clienteId: number;
-  dataPedido: string;
-  dataEntrega: string;
-  formaPagamentoId: number;
-  total: number;
-  valorPago: number;
-  taxaEntrega: number;
-  situacaoPagamento: string;
-  statusEntrega: string;
-  ordemRota: number | null;
-  observacoes: string;
-  cliente: Cliente;
-  formaPagamento: FormaPagamento | null;
-  itens: {
-    id: number;
-    produtoId: number;
-    quantidade: number;
-    precoUnitario: number;
-    subtotal: number;
-    produto: Produto;
-  }[];
-}
-
-function formatPrice(value: number): string {
-  return `R$ ${value.toFixed(2).replace(".", ",")}`;
 }
 
 export default function EditarPedidoPage() {
@@ -446,6 +391,7 @@ export default function EditarPedidoPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb items={[{ label: "Pedidos", href: "/pedidos" }, { label: `Pedido #${id}` }]} />
       <div className="flex items-center gap-4">
         <Link href="/pedidos">
           <Button variant="ghost" size="icon">

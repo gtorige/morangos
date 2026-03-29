@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "../../../../../auth";
+import { withAuth, parseBody, parseId } from "@/lib/api-helpers";
+import { recorrenteUpdateSchema } from "@/lib/schemas";
+import { generateRecurringOrders, addDaysStr } from "@/lib/services/pedido-service";
 
 interface ItemInput {
   produtoId: number;
@@ -12,23 +14,14 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { id } = await params;
-    const idNum = parseInt(id);
-    if (isNaN(idNum)) {
-      return NextResponse.json({ error: "ID inválido." }, { status: 400 });
-    }
-    const body = await request.json();
+    const idNum = parseId(id);
+    const body = await parseBody(request, recorrenteUpdateSchema);
     const { itens, ...data } = body;
 
     // Wrap update + delete items + create items + delete old orders in a transaction
     const { pendingOrderCount } = await prisma.$transaction(async (tx) => {
-      // Update main record
       await tx.pedidoRecorrente.update({
         where: { id: idNum },
         data: {
@@ -43,7 +36,6 @@ export async function PUT(
         },
       });
 
-      // Replace items if provided
       if (itens) {
         await tx.pedidoRecorrenteItem.deleteMany({
           where: { pedidoRecorrenteId: idNum },
@@ -58,8 +50,6 @@ export async function PUT(
         });
       }
 
-      // ── Regenerate pending orders ──
-      // 1. Delete all undelivered orders from this recurrence
       const pendingOrders = await tx.pedido.findMany({
         where: {
           recorrenteId: idNum,
@@ -68,7 +58,7 @@ export async function PUT(
         select: { id: true },
       });
 
-      const orderIds = pendingOrders.map(po => po.id);
+      const orderIds = pendingOrders.map((po) => po.id);
       if (orderIds.length > 0) {
         await tx.pedidoItem.deleteMany({ where: { pedidoId: { in: orderIds } } });
         await tx.pedido.deleteMany({ where: { id: { in: orderIds } } });
@@ -77,7 +67,6 @@ export async function PUT(
       return { pendingOrderCount: pendingOrders.length };
     });
 
-    // 2. Get updated recurrence with items
     const recorrente = await prisma.pedidoRecorrente.findUnique({
       where: { id: idNum },
       include: { itens: { include: { produto: true } } },
@@ -87,88 +76,59 @@ export async function PUT(
       return NextResponse.json(recorrente);
     }
 
-    // 3. Regenerate orders for the remaining period
     const today = new Date().toISOString().slice(0, 10);
-    const diasArr = recorrente.diasSemana.split(",").map(Number);
     const inicio = recorrente.dataInicio > today ? recorrente.dataInicio : today;
     const fimStr = recorrente.dataFim || addDaysStr(today, 90);
 
-    const current = new Date(inicio + "T12:00:00");
-    const fim = new Date(fimStr + "T12:00:00");
-    let pedidosCriados = 0;
-
-    while (current <= fim) {
-      const dayOfWeek = current.getDay();
-      if (diasArr.includes(dayOfWeek)) {
-        const dateStr = current.toISOString().slice(0, 10);
-
-        // Check if already has a delivered/cancelled order for this date
-        const existing = await prisma.pedido.findFirst({
-          where: { recorrenteId: idNum, dataEntrega: dateStr },
-        });
-        if (!existing) {
-          const pedidoItens = recorrente.itens.map((item) => {
-            const preco = item.precoManual ?? item.produto.preco;
-            return {
-              produtoId: item.produtoId,
-              quantidade: item.quantidade,
-              precoUnitario: preco,
-              subtotal: preco * item.quantidade,
-            };
-          });
-
-          const totalItens = pedidoItens.reduce((a, i) => a + i.subtotal, 0);
-          const total = totalItens + recorrente.taxaEntrega;
-
-          await prisma.pedido.create({
-            data: {
-              clienteId: recorrente.clienteId,
-              dataPedido: dateStr,
-              dataEntrega: dateStr,
-              formaPagamentoId: recorrente.formaPagamentoId,
-              total,
-              valorPago: 0,
-              situacaoPagamento: "Pendente",
-              statusEntrega: "Pendente",
-              taxaEntrega: recorrente.taxaEntrega,
-              observacoes: recorrente.observacoes ? `[Recorrente] ${recorrente.observacoes}` : "[Recorrente]",
-              recorrenteId: idNum,
-              itens: { create: pedidoItens },
-            },
-          });
-          pedidosCriados++;
-        }
-      }
-      current.setDate(current.getDate() + 1);
-    }
+    const pedidosCriados = await generateRecurringOrders({
+      recorrenteId: idNum,
+      clienteId: recorrente.clienteId,
+      formaPagamentoId: recorrente.formaPagamentoId,
+      diasSemana: recorrente.diasSemana,
+      dataInicio: inicio,
+      dataFim: fimStr,
+      taxaEntrega: recorrente.taxaEntrega,
+      observacoes: recorrente.observacoes,
+      itens: recorrente.itens,
+    });
 
     const updated = await prisma.pedidoRecorrente.findUnique({
       where: { id: idNum },
-      include: { cliente: true, itens: { include: { produto: true } }, _count: { select: { pedidosGerados: true } } },
+      include: {
+        cliente: true,
+        itens: { include: { produto: true } },
+        _count: { select: { pedidosGerados: true } },
+      },
     });
 
-    return NextResponse.json({ ...updated, pedidosRegenerados: pedidosCriados, pedidosDeletados: pendingOrderCount });
-  } catch (error) {
-    console.error("Erro ao atualizar recorrente:", error);
-    return NextResponse.json({ error: "Erro ao atualizar recorrente" }, { status: 500 });
-  }
+    return NextResponse.json({
+      ...updated,
+      pedidosRegenerados: pedidosCriados,
+      pedidosDeletados: pendingOrderCount,
+    });
+  });
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  return withAuth(async () => {
+    const { id } = await params;
+    const idNum = parseId(id);
+
+    // Optional body: { keepOrderIds?: number[] } — orders the user wants to keep
+    let keepOrderIds: number[] = [];
+    try {
+      const body = await request.json();
+      if (Array.isArray(body.keepOrderIds)) {
+        keepOrderIds = body.keepOrderIds;
+      }
+    } catch {
+      // No body or invalid JSON — delete all pending (default behavior)
     }
 
-    const { id } = await params;
-    const idNum = parseInt(id);
-    if (isNaN(idNum)) {
-      return NextResponse.json({ error: "ID inválido." }, { status: 400 });
-    }
+    const keepSet = new Set(keepOrderIds);
 
     const pendingOrderCount = await prisma.$transaction(async (tx) => {
       const pendingOrders = await tx.pedido.findMany({
@@ -179,14 +139,17 @@ export async function DELETE(
         select: { id: true },
       });
 
-      // Delete pending orders (items cascade)
-      const orderIds = pendingOrders.map(po => po.id);
-      if (orderIds.length > 0) {
-        await tx.pedidoItem.deleteMany({ where: { pedidoId: { in: orderIds } } });
-        await tx.pedido.deleteMany({ where: { id: { in: orderIds } } });
+      // Only delete orders NOT in the keep list
+      const orderIdsToDelete = pendingOrders
+        .map((po) => po.id)
+        .filter((oid) => !keepSet.has(oid));
+
+      if (orderIdsToDelete.length > 0) {
+        await tx.pedidoItem.deleteMany({ where: { pedidoId: { in: orderIdsToDelete } } });
+        await tx.pedido.deleteMany({ where: { id: { in: orderIdsToDelete } } });
       }
 
-      // Unlink delivered/cancelled orders
+      // Unlink all remaining orders (kept + delivered/cancelled)
       await tx.pedido.updateMany({
         where: { recorrenteId: idNum },
         data: { recorrenteId: null },
@@ -194,18 +157,9 @@ export async function DELETE(
 
       await tx.pedidoRecorrente.delete({ where: { id: idNum } });
 
-      return pendingOrders.length;
+      return { deleted: orderIdsToDelete.length, kept: keepOrderIds.length, total: pendingOrders.length };
     });
 
-    return NextResponse.json({ success: true, pedidosDeletados: pendingOrderCount });
-  } catch (error) {
-    console.error("Erro ao excluir recorrente:", error);
-    return NextResponse.json({ error: "Erro ao excluir recorrente" }, { status: 500 });
-  }
-}
-
-function addDaysStr(dateStr: string, days: number) {
-  const d = new Date(dateStr + "T12:00:00");
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+    return NextResponse.json({ success: true, pedidosDeletados: pendingOrderCount.deleted, pedidosMantidos: pendingOrderCount.kept });
+  });
 }

@@ -1,22 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "../../../../../auth";
+import { withAuth } from "@/lib/api-helpers";
 
 export async function POST(request: NextRequest) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const body = await request.json();
     const data = body.data || new Date().toISOString().slice(0, 10);
 
-    // Get day of week (0=Sunday, 1=Monday...6=Saturday)
     const date = new Date(data + "T12:00:00");
     const dayOfWeek = date.getDay();
 
-    // Find active recorrentes that match this day
     const recorrentes = await prisma.pedidoRecorrente.findMany({
       where: {
         ativo: true,
@@ -27,7 +20,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Filter by day of week and valid end date
     const matching = recorrentes.filter((r) => {
       const dias = r.diasSemana.split(",").map(Number);
       if (!dias.includes(dayOfWeek)) return false;
@@ -39,7 +31,6 @@ export async function POST(request: NextRequest) {
     let skipped = 0;
 
     for (const rec of matching) {
-      // Check if already generated for this date
       const existing = await prisma.pedido.findFirst({
         where: {
           recorrenteId: rec.id,
@@ -52,7 +43,6 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Calculate totals using current product prices
       const itens = rec.itens.map((item) => ({
         produtoId: item.produtoId,
         quantidade: item.quantidade,
@@ -74,7 +64,9 @@ export async function POST(request: NextRequest) {
           situacaoPagamento: "Pendente",
           statusEntrega: "Pendente",
           taxaEntrega: rec.taxaEntrega,
-          observacoes: rec.observacoes ? `[Recorrente] ${rec.observacoes}` : "[Recorrente]",
+          observacoes: rec.observacoes
+            ? `[Recorrente] ${rec.observacoes}`
+            : "[Recorrente]",
           recorrenteId: rec.id,
           itens: { create: itens },
         },
@@ -90,8 +82,5 @@ export async function POST(request: NextRequest) {
       pedidosCriados: created,
       pedidosIgnorados: skipped,
     });
-  } catch (error) {
-    console.error("Erro ao gerar pedidos recorrentes:", error);
-    return NextResponse.json({ error: "Erro ao gerar pedidos" }, { status: 500 });
-  }
+  });
 }

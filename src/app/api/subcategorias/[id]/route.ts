@@ -1,22 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "../../../../../auth";
+import { withAuth, parseId } from "@/lib/api-helpers";
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { id } = await params;
-    await prisma.subcategoria.delete({ where: { id: Number(id) } });
+    const idNum = parseId(id);
+
+    await prisma.subcategoria.delete({ where: { id: idNum } });
     return NextResponse.json({ message: "Subcategoria excluída com sucesso" });
-  } catch (error) {
-    console.error("Erro ao excluir subcategoria:", error);
-    return NextResponse.json({ error: "Erro ao excluir subcategoria" }, { status: 500 });
-  }
+  });
 }

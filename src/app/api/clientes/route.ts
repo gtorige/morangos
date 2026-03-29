@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "../../../../auth";
+import { withAuth, parseBody } from "@/lib/api-helpers";
+import { clienteCreateSchema } from "@/lib/schemas";
 
 export async function GET(request: NextRequest) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { searchParams } = new URL(request.url);
     const busca = searchParams.get("busca");
 
@@ -28,36 +24,13 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json(clientes);
-  } catch (error) {
-    console.error("Erro ao buscar clientes:", error);
-    return NextResponse.json(
-      { error: "Erro ao buscar clientes" },
-      { status: 500 }
-    );
-  }
+  });
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const { nome, telefone, cep, rua, numero, bairro, cidade, enderecoAlternativo, observacoes } = body;
-    if (!nome?.trim()) {
-      return NextResponse.json({ error: "Nome é obrigatório." }, { status: 400 });
-    }
-    const cliente = await prisma.cliente.create({
-      data: { nome, telefone: telefone || "", cep: cep || "", rua: rua || "", numero: numero || "", bairro: bairro || "", cidade: cidade || "", enderecoAlternativo: enderecoAlternativo || "", observacoes: observacoes || "" },
-    });
+  return withAuth(async () => {
+    const data = await parseBody(request, clienteCreateSchema);
+    const cliente = await prisma.cliente.create({ data });
     return NextResponse.json(cliente, { status: 201 });
-  } catch (error) {
-    console.error("Erro ao criar cliente:", error);
-    return NextResponse.json(
-      { error: "Erro ao criar cliente" },
-      { status: 500 }
-    );
-  }
+  });
 }

@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/table";
 import {
   Plus,
-  Pencil,
   Trash2,
   Search,
   Users,
@@ -38,18 +37,9 @@ function formatPhone(phone: string) {
   return phone;
 }
 
-interface Cliente {
-  id: number;
-  nome: string;
-  telefone: string;
-  cep: string;
-  rua: string;
-  numero: string;
-  bairro: string;
-  cidade: string;
-  enderecoAlternativo: string;
-  observacoes: string;
-}
+import { TableSkeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
+import type { Cliente } from "@/lib/types";
 
 const emptyForm = {
   nome: "",
@@ -714,11 +704,9 @@ export default function ClientesPage() {
       </div>
 
       {loading ? (
-        <p className="text-center text-muted-foreground">Carregando...</p>
+        <TableSkeleton rows={5} cols={5} />
       ) : clientes.length === 0 ? (
-        <p className="text-center text-muted-foreground">
-          Nenhum cliente encontrado.
-        </p>
+        <EmptyState icon={Users} title="Nenhum cliente encontrado" actionLabel="+ Novo Cliente" onAction={() => handleNew()} />
       ) : (
         <div className="overflow-x-auto">
           <Table>
@@ -732,7 +720,7 @@ export default function ClientesPage() {
               {clientes.map((cliente) => (
                 <TableRow
                   key={cliente.id}
-                  className="cursor-pointer hover:bg-accent/50 transition-colors"
+                  className="cursor-pointer"
                   onDoubleClick={() => handleEdit(cliente)}
                 >
                   {visibleCols.map((col) => renderBodyCell(cliente, col))}
@@ -741,16 +729,10 @@ export default function ClientesPage() {
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => handleEdit(cliente)}
-                      >
-                        <Pencil className="size-4" />
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="icon-sm"
+                        title="Excluir"
                         onClick={() => handleDelete(cliente.id)}
                       >
-                        <Trash2 className="size-4" />
+                        <Trash2 className="size-4 text-destructive" />
                       </Button>
                     </div>
                   </TableCell>

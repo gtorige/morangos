@@ -1,7 +1,22 @@
 import type { NextConfig } from "next";
+import { networkInterfaces } from "os";
+
+// Auto-detect local IP addresses for dev origin access
+function getLocalIPs(): string[] {
+  const ips: string[] = [];
+  const interfaces = networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] ?? []) {
+      if (iface.family === "IPv4" && !iface.internal) {
+        ips.push(iface.address);
+      }
+    }
+  }
+  return ips;
+}
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["192.168.10.2"],
+  allowedDevOrigins: getLocalIPs(),
   async headers() {
     return [
       {

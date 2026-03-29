@@ -16,6 +16,7 @@ import {
   X,
   MessageCircle,
 } from "lucide-react";
+import { formatCurrency as fmt, todayStr as todayString } from "@/lib/formatting";
 
 const ROTA_STORAGE_KEY = "rota-lista";
 
@@ -65,14 +66,6 @@ interface Parada {
 type ListItem =
   | { type: "pedido"; data: Pedido }
   | { type: "parada"; data: Parada };
-
-function fmt(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function todayString() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function buildWppUrl(telefone: string, texto: string) {
   const num = telefone.replace(/\D/g, "");

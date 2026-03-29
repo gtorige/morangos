@@ -4,8 +4,10 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { TableSkeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Table,
   TableBody,
@@ -14,8 +16,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ClipboardCheck, Package, Users, Printer } from "lucide-react";
+import { ClipboardCheck, Package, Users, Printer, PackageOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatDate, todayStr as todayString } from "@/lib/formatting";
 
 interface ProdutoResumo {
   produtoId: number;
@@ -45,10 +48,6 @@ interface Separacao {
   detalhes: Detalhe[];
 }
 
-function todayString() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function weekRange(): { inicio: string; fim: string } {
   const d = new Date();
   const dow = d.getDay();
@@ -61,11 +60,6 @@ function weekRange(): { inicio: string; fim: string } {
     inicio: mon.toISOString().slice(0, 10),
     fim: sun.toISOString().slice(0, 10),
   };
-}
-
-function formatDate(dateStr: string) {
-  const [y, m, day] = dateStr.split("-");
-  return `${day}/${m}/${y}`;
 }
 
 export default function SeparacaoPage() {
@@ -179,37 +173,35 @@ export default function SeparacaoPage() {
       </div>
 
       {loading ? (
-        <p className="text-center text-muted-foreground">Carregando...</p>
+        <TableSkeleton rows={5} cols={3} />
       ) : !separacao || separacao.totalPedidos === 0 ? (
-        <p className="text-center text-muted-foreground">
-          Nenhum pedido para esta data.
-        </p>
+        <EmptyState icon={PackageOpen} title="Nenhum pedido para esta data." />
       ) : (
         <>
           {/* Summary cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 print:hidden">
-            <Card className="border-indigo-200 bg-indigo-50 dark:border-indigo-900 dark:bg-indigo-950/40">
+            <Card className="border-l-4 border-l-indigo-500">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm text-indigo-700 dark:text-indigo-400">
+                <CardTitle className="flex items-center gap-2 text-sm text-indigo-400">
                   <Package className="size-4" />
                   Total de Itens
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-bold text-indigo-900 dark:text-indigo-200">
+                <p className="text-3xl font-bold text-foreground">
                   {totalItens}
                 </p>
               </CardContent>
             </Card>
-            <Card className="border-purple-200 bg-purple-50 dark:border-purple-900 dark:bg-purple-950/40">
+            <Card className="border-l-4 border-l-purple-500">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm text-purple-700 dark:text-purple-400">
+                <CardTitle className="flex items-center gap-2 text-sm text-purple-400">
                   <Users className="size-4" />
                   Pedidos
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-bold text-purple-900 dark:text-purple-200">
+                <p className="text-3xl font-bold text-foreground">
                   {separacao.totalPedidos}
                 </p>
               </CardContent>
@@ -293,7 +285,7 @@ export default function SeparacaoPage() {
                     return (
                       <TableRow
                         key={d.pedidoId}
-                        className={`cursor-pointer transition-colors ${checked ? "opacity-50 line-through bg-green-500/10" : "hover:bg-accent/50"}`}
+                        className={`cursor-pointer transition-colors ${checked ? "opacity-50 line-through bg-green-500/10" : ""}`}
                         onClick={() => toggleCheck(key)}
                       >
                         <TableCell className="print:hidden" onClick={(e) => e.stopPropagation()}>
@@ -317,17 +309,7 @@ export default function SeparacaoPage() {
                           </div>
                         </TableCell>
                         <TableCell className="hidden sm:table-cell">
-                          <Badge
-                            className={
-                              d.statusEntrega === "Entregue"
-                                ? "bg-green-600 text-white"
-                                : d.statusEntrega === "Em rota"
-                                ? "bg-blue-600 text-white"
-                                : "bg-yellow-500 text-white"
-                            }
-                          >
-                            {d.statusEntrega}
-                          </Badge>
+                          <StatusBadge status={d.statusEntrega} context="entrega" />
                         </TableCell>
                       </TableRow>
                     );

@@ -21,6 +21,10 @@ import {
 } from "@/components/ui/sheet";
 import { Plus, Trash2, Save, Check, RotateCcw } from "lucide-react";
 import { calcSubtotal as calcSubtotalBase } from "@/lib/pedido-utils";
+import { formatPrice } from "@/lib/formatting";
+import type { Produto, FormaPagamento, Promocao, ItemPedidoForm } from "@/lib/types";
+
+type ItemPedido = ItemPedidoForm;
 
 interface Cliente {
   id: number;
@@ -30,40 +34,6 @@ interface Cliente {
   numero: string;
   bairro: string;
   cidade: string;
-}
-
-interface Produto {
-  id: number;
-  nome: string;
-  preco: number;
-}
-
-interface FormaPagamento {
-  id: number;
-  nome: string;
-}
-
-interface Promocao {
-  id: number;
-  nome: string;
-  produtoId: number;
-  tipo: string;
-  precoPromocional: number;
-  leveQuantidade: number | null;
-  pagueQuantidade: number | null;
-  quantidadeMinima: number | null;
-  produtoId2: number | null;
-  dataInicio: string;
-  dataFim: string;
-  ativo: boolean;
-}
-
-interface ItemPedido {
-  produtoId: string;
-  quantidade: string;
-  precoUnitario: number;
-  subtotal: number;
-  precoManual: boolean;
 }
 
 export interface NovoPedidoInitialData {
@@ -80,10 +50,6 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
   initialData?: NovoPedidoInitialData;
-}
-
-function formatPrice(value: number): string {
-  return `R$ ${value.toFixed(2).replace(".", ",")}`;
 }
 
 export function NovoPedidoSheet({ open, onOpenChange, onSuccess, initialData }: Props) {

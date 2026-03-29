@@ -30,6 +30,7 @@ import {
   ChevronDown,
   MessageCircle,
 } from "lucide-react";
+import { formatCurrency as fmt, todayStr as todayString } from "@/lib/formatting";
 
 interface Cliente {
   id: number;
@@ -93,10 +94,6 @@ type ListItem =
   | { type: "pedido"; data: Pedido }
   | { type: "parada"; data: Parada };
 
-function fmt(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
 function buildWppUrl(telefone: string, texto: string) {
   const num = telefone.replace(/\D/g, "");
   const full = num.startsWith("55") ? num : `55${num}`;
@@ -121,10 +118,6 @@ function fmtMin(min: number) {
   if (h === 0) return `${m}min`;
   if (m === 0) return `${h}h`;
   return `${h}h ${m}min`;
-}
-
-function todayString() {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function buildAddress(cliente: Cliente) {

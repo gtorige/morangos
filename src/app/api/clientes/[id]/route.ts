@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "../../../../../auth";
+import { withAuth, parseBody, parseId } from "@/lib/api-helpers";
+import { clienteUpdateSchema } from "@/lib/schemas";
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { id } = await params;
+    const idNum = parseId(id);
+
     const cliente = await prisma.cliente.findUnique({
-      where: { id: Number(id) },
+      where: { id: idNum },
     });
 
     if (!cliente) {
@@ -25,61 +23,36 @@ export async function GET(
     }
 
     return NextResponse.json(cliente);
-  } catch (error) {
-    console.error("Erro ao buscar cliente:", error);
-    return NextResponse.json(
-      { error: "Erro ao buscar cliente" },
-      { status: 500 }
-    );
-  }
+  });
 }
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { id } = await params;
-    const body = await request.json();
-    const { nome, telefone, cep, rua, numero, bairro, cidade, enderecoAlternativo, observacoes } = body;
+    const idNum = parseId(id);
+    const data = await parseBody(request, clienteUpdateSchema);
+
     const cliente = await prisma.cliente.update({
-      where: { id: Number(id) },
-      data: { nome, telefone, cep, rua, numero, bairro, cidade, enderecoAlternativo, observacoes },
+      where: { id: idNum },
+      data,
     });
 
     return NextResponse.json(cliente);
-  } catch (error) {
-    console.error("Erro ao atualizar cliente:", error);
-    return NextResponse.json(
-      { error: "Erro ao atualizar cliente" },
-      { status: 500 }
-    );
-  }
+  });
 }
 
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { id } = await params;
-    await prisma.cliente.delete({ where: { id: Number(id) } });
+    const idNum = parseId(id);
+
+    await prisma.cliente.delete({ where: { id: idNum } });
     return NextResponse.json({ message: "Cliente excluído com sucesso" });
-  } catch (error) {
-    console.error("Erro ao excluir cliente:", error);
-    return NextResponse.json(
-      { error: "Erro ao excluir cliente" },
-      { status: 500 }
-    );
-  }
+  });
 }

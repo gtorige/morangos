@@ -1,22 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { auth } from "../../../../auth";
+import { withAuth, parseBody, parseId } from "@/lib/api-helpers";
+import { pedidoCreateSchema } from "@/lib/schemas";
+import { processOrderItems } from "@/lib/services/pedido-service";
+import { PEDIDO_INCLUDE, SITUACAO_PAGAMENTO, STATUS_ENTREGA } from "@/lib/constants";
+import { nowStr, todayStr } from "@/lib/formatting";
 
 export async function GET(request: NextRequest) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { searchParams } = new URL(request.url);
     const duplicarId = searchParams.get("duplicar");
 
     // Handle duplication
     if (duplicarId) {
+      const id = parseId(duplicarId);
       const original = await prisma.pedido.findUnique({
-        where: { id: Number(duplicarId) },
+        where: { id },
         include: { itens: true },
       });
 
@@ -27,9 +27,8 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      const now = new Date();
-      const dataPedido = now.toISOString().slice(0, 19);
-      const dataEntrega = now.toISOString().slice(0, 10);
+      const dataPedido = nowStr();
+      const dataEntrega = todayStr();
 
       const novoPedido = await prisma.pedido.create({
         data: {
@@ -53,11 +52,7 @@ export async function GET(request: NextRequest) {
             })),
           },
         },
-        include: {
-          cliente: true,
-          itens: { include: { produto: true } },
-          formaPagamento: true,
-        },
+        include: PEDIDO_INCLUDE,
       });
 
       return NextResponse.json(novoPedido, { status: 201 });
@@ -67,11 +62,11 @@ export async function GET(request: NextRequest) {
     const where: Prisma.PedidoWhereInput = {};
 
     const clienteId = searchParams.get("cliente");
-    if (clienteId) where.clienteId = Number(clienteId);
+    if (clienteId) where.clienteId = parseId(clienteId);
 
     const produtoId = searchParams.get("produto");
     if (produtoId) {
-      where.itens = { some: { produtoId: Number(produtoId) } };
+      where.itens = { some: { produtoId: parseId(produtoId) } };
     }
 
     const bairro = searchParams.get("bairro");
@@ -80,10 +75,10 @@ export async function GET(request: NextRequest) {
     }
 
     const formaPagamentoId = searchParams.get("formaPagamento");
-    if (formaPagamentoId) where.formaPagamentoId = Number(formaPagamentoId);
+    if (formaPagamentoId) where.formaPagamentoId = parseId(formaPagamentoId);
 
-    const validPagamento = ["Pendente", "Pago"];
-    const validEntrega = ["Pendente", "Em rota", "Entregue", "Cancelado"];
+    const validPagamento: readonly string[] = SITUACAO_PAGAMENTO;
+    const validEntrega: readonly string[] = STATUS_ENTREGA;
 
     const situacaoPagamento = searchParams.get("situacaoPagamento");
     if (situacaoPagamento && validPagamento.includes(situacaoPagamento)) {
@@ -92,7 +87,9 @@ export async function GET(request: NextRequest) {
 
     const statusEntrega = searchParams.get("statusEntrega");
     if (statusEntrega) {
-      const statuses = statusEntrega.split(",").filter(s => validEntrega.includes(s));
+      const statuses = statusEntrega
+        .split(",")
+        .filter((s) => validEntrega.includes(s));
       if (statuses.length === 1) {
         where.statusEntrega = statuses[0];
       } else if (statuses.length > 1) {
@@ -124,185 +121,41 @@ export async function GET(request: NextRequest) {
 
     const pedidos = await prisma.pedido.findMany({
       where,
-      include: {
-        cliente: true,
-        formaPagamento: true,
-        itens: { include: { produto: true } },
-      },
+      include: PEDIDO_INCLUDE,
       orderBy: { dataPedido: orderBy === "asc" ? "asc" : "desc" },
-      ...(limit ? { take: Number(limit) } : {}),
+      ...(limit ? { take: parseId(limit) } : {}),
     });
 
     return NextResponse.json(pedidos);
-  } catch (error) {
-    console.error("Erro ao buscar pedidos:", error);
-    return NextResponse.json(
-      { error: "Erro ao buscar pedidos" },
-      { status: 500 }
-    );
-  }
+  });
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
+  return withAuth(async () => {
+    const body = await parseBody(request, pedidoCreateSchema);
+    const { itens, taxaEntrega, ...pedidoData } = body;
 
-    const body = await request.json();
-    if (!body.clienteId) {
-      return NextResponse.json({ error: "Cliente é obrigatório" }, { status: 400 });
-    }
-    if (!Array.isArray(body.itens) || body.itens.length === 0) {
-      return NextResponse.json({ error: "Pedido deve ter ao menos um item" }, { status: 400 });
-    }
-    const { itens, taxaEntrega: taxaEntregaInput, ...pedidoData } = body;
-    const taxaEntrega = Number(taxaEntregaInput) || 0;
-
-    const hoje = new Date().toISOString().slice(0, 10);
-
-    // Batch-fetch all products and active promotions to avoid N+1 queries
-    const produtoIds = itens.map((i: any) => Number(i.produtoId));
-    const [allProdutos, allPromocoes] = await Promise.all([
-      prisma.produto.findMany({ where: { id: { in: produtoIds } } }),
-      prisma.promocao.findMany({
-        where: {
-          produtoId: { in: produtoIds },
-          ativo: true,
-          dataInicio: { lte: hoje },
-          dataFim: { gte: hoje },
-        },
-      }),
-    ]);
-    const produtoMap = new Map(allProdutos.map(p => [p.id, p]));
-    const promocaoMap = new Map(allPromocoes.map(p => [p.produtoId, p]));
-
-    // Process items: check for active promotions
-    const itensProcessados = itens.map(
-      (item: {
-        produtoId: number;
-        quantidade: number;
-        precoUnitario?: number;
-      }) => {
-        // If a non-zero precoUnitario override is provided, use it directly
-        if (item.precoUnitario !== undefined && item.precoUnitario !== 0) {
-          const subtotal = item.precoUnitario * item.quantidade;
-          return {
-            produtoId: item.produtoId,
-            quantidade: item.quantidade,
-            precoUnitario: item.precoUnitario,
-            subtotal,
-          };
-        }
-
-        const produtoId = Number(item.produtoId);
-        const promocao = promocaoMap.get(produtoId) ?? null;
-        const produto = produtoMap.get(produtoId);
-        const precoBase = produto?.preco ?? 0;
-
-        let precoUnitario: number;
-        let subtotal: number;
-
-        if (promocao && promocao.tipo === "leve_x_pague_y") {
-          // "Leve X Pague Y" promotion: charge fewer units
-          const leveQuantidade = promocao.leveQuantidade ?? 0;
-          const pagueQuantidade = promocao.pagueQuantidade ?? 0;
-
-          precoUnitario = precoBase;
-
-          if (leveQuantidade > 0 && pagueQuantidade > 0) {
-            const gruposCompletos = Math.floor(item.quantidade / leveQuantidade);
-            const resto = item.quantidade % leveQuantidade;
-            const qtdCobrada = gruposCompletos * pagueQuantidade + resto;
-            subtotal = qtdCobrada * precoUnitario;
-          } else {
-            subtotal = precoUnitario * item.quantidade;
-          }
-        } else if (promocao && promocao.tipo === "quantidade_minima") {
-          // Quantity threshold promotion: special price above minimum quantity
-          const min = promocao.quantidadeMinima ?? 0;
-          if (min > 0 && item.quantidade >= min) {
-            precoUnitario = promocao.precoPromocional;
-          } else {
-            precoUnitario = precoBase;
-          }
-          subtotal = precoUnitario * item.quantidade;
-        } else if (promocao && promocao.tipo === "compra_casada") {
-          // Bundle promotion: handled after all items are processed (needs partner product check)
-          precoUnitario = precoBase;
-          subtotal = precoUnitario * item.quantidade;
-        } else if (promocao && promocao.tipo === "desconto") {
-          // Discount promotion: use promotional price
-          precoUnitario = promocao.precoPromocional;
-          subtotal = precoUnitario * item.quantidade;
-        } else if (promocao) {
-          // Fallback for promotions without a recognized tipo (legacy behavior)
-          precoUnitario = promocao.precoPromocional;
-          subtotal = precoUnitario * item.quantidade;
-        } else {
-          precoUnitario = precoBase;
-          subtotal = precoUnitario * item.quantidade;
-        }
-
-        return {
-          produtoId: item.produtoId,
-          quantidade: item.quantidade,
-          precoUnitario,
-          subtotal,
-        };
-      }
+    const { itensProcessados, total } = await processOrderItems(
+      itens,
+      pedidoData.dataEntrega
     );
-
-    // Second pass: apply "compra_casada" (bundle) promotions
-    // When product A (produtoId) is in the order, product B (produtoId2) gets precoPromocional
-    const produtoIdSet = new Set(produtoIds);
-    for (const promocao of allPromocoes) {
-      if (promocao.tipo !== "compra_casada" || !promocao.produtoId2) continue;
-      if (!produtoIdSet.has(promocao.produtoId)) continue; // primary not in order
-      const targetItem = itensProcessados.find(
-        (i: { produtoId: number }) => i.produtoId === promocao.produtoId2
-      );
-      if (!targetItem) continue;
-      targetItem.precoUnitario = promocao.precoPromocional;
-      targetItem.subtotal = promocao.precoPromocional * targetItem.quantidade;
-    }
-
-    const total =
-      itensProcessados.reduce(
-        (acc: number, item: { subtotal: number }) => acc + item.subtotal,
-        0
-      ) + taxaEntrega;
-
-    const now = new Date();
-    const dataPedido = now.toISOString().slice(0, 19);
 
     const pedido = await prisma.pedido.create({
       data: {
         clienteId: pedidoData.clienteId,
-        dataPedido,
-        dataEntrega: pedidoData.dataEntrega || now.toISOString().slice(0, 10),
+        dataPedido: nowStr(),
+        dataEntrega: pedidoData.dataEntrega || todayStr(),
         formaPagamentoId: pedidoData.formaPagamentoId || null,
         observacoes: pedidoData.observacoes || "",
-        total,
+        total: total + taxaEntrega,
         taxaEntrega,
         itens: {
           create: itensProcessados,
         },
       },
-      include: {
-        cliente: true,
-        formaPagamento: true,
-        itens: { include: { produto: true } },
-      },
+      include: PEDIDO_INCLUDE,
     });
 
     return NextResponse.json(pedido, { status: 201 });
-  } catch (error) {
-    console.error("Erro ao criar pedido:", error);
-    return NextResponse.json(
-      { error: "Erro ao criar pedido" },
-      { status: 500 }
-    );
-  }
+  });
 }

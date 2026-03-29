@@ -20,29 +20,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Pencil, Trash2, Tag, SlidersHorizontal, Download, ChevronUp, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Tag, SlidersHorizontal, Download, ChevronUp, ChevronDown } from "lucide-react";
+import { TableSkeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { formatPrice, formatDate } from "@/lib/formatting";
+import type { Produto, Promocao as PromocaoBase } from "@/lib/types";
 
-interface Produto {
-  id: number;
-  nome: string;
-  preco: number;
-}
-
-interface Promocao {
-  id: number;
-  nome: string;
-  produtoId: number;
+interface Promocao extends PromocaoBase {
   produto: Produto;
-  tipo: string;
-  precoPromocional: number;
-  leveQuantidade: number | null;
-  pagueQuantidade: number | null;
-  quantidadeMinima: number | null;
-  produtoId2: number | null;
   produto2Nome?: string;
-  dataInicio: string;
-  dataFim: string;
-  ativo: boolean;
 }
 
 interface FormData {
@@ -72,16 +59,6 @@ const emptyForm: FormData = {
   dataFim: "",
   ativo: true,
 };
-
-function formatPrice(value: number): string {
-  return `R$ ${value.toFixed(2).replace(".", ",")}`;
-}
-
-function formatDate(dateStr: string): string {
-  if (!dateStr) return "";
-  const [year, month, day] = dateStr.split("-");
-  return `${day}/${month}/${year}`;
-}
 
 function tipoLabel(item: Promocao, produtos: Produto[]): string {
   switch (item.tipo) {
@@ -314,7 +291,7 @@ export default function PromocoesPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Tag className="size-5" />
-          <h1 className="text-2xl font-bold">Promoções</h1>
+          <h1 className="text-2xl font-semibold">Promoções</h1>
         </div>
         <Button onClick={openNew}>
           <Plus className="size-4" />
@@ -351,6 +328,11 @@ export default function PromocoesPage() {
         </Button>
       </div>
 
+      {loading ? (
+        <TableSkeleton rows={5} cols={6} />
+      ) : items.length === 0 ? (
+        <EmptyState icon={Tag} title="Nenhuma promoção cadastrada" actionLabel="+ Nova Promoção" onAction={() => openNew()} />
+      ) : (
       <div className="rounded-lg border overflow-x-auto">
         <Table>
           <TableHeader>
@@ -362,21 +344,8 @@ export default function PromocoesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={visCols.length + 1} className="text-center py-8 text-muted-foreground">
-                  Carregando...
-                </TableCell>
-              </TableRow>
-            ) : items.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={visCols.length + 1} className="text-center py-8 text-muted-foreground">
-                  Nenhuma promoção cadastrada
-                </TableCell>
-              </TableRow>
-            ) : (
-              items.map((item) => (
-                <TableRow key={item.id} className="cursor-pointer hover:bg-accent/50 transition-colors" onDoubleClick={() => openEdit(item)}>
+            {items.map((item) => (
+                <TableRow key={item.id} className="cursor-pointer" onDoubleClick={() => openEdit(item)}>
                   {visCols.map(col => {
                     switch (col.key) {
                       case 'nome':
@@ -392,11 +361,7 @@ export default function PromocoesPage() {
                       case 'ativo':
                         return (
                           <TableCell key={col.key}>
-                            {item.ativo ? (
-                              <Badge className="bg-green-600 text-white">Ativo</Badge>
-                            ) : (
-                              <Badge className="bg-red-600 text-white">Inativo</Badge>
-                            )}
+                            <StatusBadge status={item.ativo ? "Ativo" : "Inativo"} />
                           </TableCell>
                         );
                       default:
@@ -405,20 +370,17 @@ export default function PromocoesPage() {
                   })}
                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="icon-sm" onClick={() => openEdit(item)}>
-                        <Pencil className="size-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(item.id)}>
+                      <Button variant="ghost" size="icon-sm" title="Excluir" onClick={() => handleDelete(item.id)}>
                         <Trash2 className="size-4 text-destructive" />
                       </Button>
                     </div>
                   </TableCell>
                 </TableRow>
-              ))
-            )}
+              ))}
           </TableBody>
         </Table>
       </div>
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">

@@ -6,6 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { TableSkeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { TabsNav, type TabItem } from "@/components/ui/tabs-nav";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +27,6 @@ import {
 } from "@/components/ui/table";
 import {
   Plus,
-  Pencil,
   Trash2,
   Receipt,
   Store,
@@ -38,6 +41,7 @@ import {
   ChevronDown,
   RotateCw,
 } from "lucide-react";
+import { formatPrice, formatDate } from "@/lib/formatting";
 
 // ── Types ──
 
@@ -135,16 +139,6 @@ const emptyContaForm: ContaForm = {
 
 // ── Helpers ──
 
-function formatPrice(value: number) {
-  return `R$ ${value.toFixed(2).replace(".", ",")}`;
-}
-
-function formatDate(dateStr: string) {
-  if (!dateStr) return "";
-  const [year, month, day] = dateStr.split("-");
-  return `${day}/${month}/${year}`;
-}
-
 function getRowClassName(conta: Conta) {
   if (conta.situacao !== "Pendente") return "";
   try {
@@ -157,12 +151,12 @@ function getRowClassName(conta: Conta) {
 }
 
 function getSituacaoBadge(conta: Conta) {
-  if (conta.situacao === "Pago") return <Badge className="bg-green-600 text-white">Pago</Badge>;
+  if (conta.situacao === "Pago") return <StatusBadge status="Pago" context="conta" />;
   try {
     const venc = parseISO(conta.vencimento);
-    if (isToday(venc) || isPast(venc)) return <Badge className="bg-red-600 text-white">Vencida</Badge>;
+    if (isToday(venc) || isPast(venc)) return <StatusBadge status="Vencida" context="conta" />;
   } catch {}
-  return <Badge className="bg-yellow-500 text-white">Pendente</Badge>;
+  return <StatusBadge status="Pendente" context="conta" />;
 }
 
 // ── Component ──
@@ -799,9 +793,7 @@ export default function ContasPage() {
         return <span className="text-sm text-muted-foreground">{getSubcategoriaNome(item) || "—"}</span>;
       case "tipo":
         return item.tipoFinanceiro ? (
-          <Badge className={item.tipoFinanceiro === "CAPEX" ? "bg-blue-600 text-white text-xs" : "bg-orange-600 text-white text-xs"}>
-            {item.tipoFinanceiro}
-          </Badge>
+          <StatusBadge status={item.tipoFinanceiro} context="financeiro" />
         ) : <span className="text-muted-foreground">—</span>;
       case "valor":
         return <span>{formatPrice(item.valor)}</span>;
@@ -848,25 +840,7 @@ export default function ContasPage() {
       </div>
 
       {/* Sub-tabs */}
-      <div className="flex gap-1 border-b border-border">
-        {tabs.map((t) => {
-          const Icon = t.icon;
-          return (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
-                tab === t.key
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Icon className="size-3.5" />
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      <TabsNav items={tabs} value={tab} onChange={(key) => setTab(key as Tab)} />
 
       {/* ═══ CONTAS TAB ═══ */}
       {tab === "contas" && (
@@ -1059,14 +1033,14 @@ export default function ContasPage() {
               <TableBody>
                 {contasLoading ? (
                   <TableRow>
-                    <TableCell colSpan={visCols.length + 2} className="text-center py-8 text-muted-foreground">
-                      Carregando...
+                    <TableCell colSpan={visCols.length + 2}>
+                      <TableSkeleton rows={5} cols={visCols.length} />
                     </TableCell>
                   </TableRow>
                 ) : filteredContas.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={visCols.length + 2} className="text-center py-8 text-muted-foreground">
-                      {activeFiltersCount > 0 ? "Nenhuma conta com esses filtros." : "Nenhuma conta cadastrada"}
+                    <TableCell colSpan={visCols.length + 2}>
+                      <EmptyState icon={Receipt} title={activeFiltersCount > 0 ? "Nenhuma conta com esses filtros." : "Nenhuma conta cadastrada"} />
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -1124,7 +1098,7 @@ export default function ContasPage() {
                         rows.push(
                           <TableRow
                             key={`grupo-${expandKey}`}
-                            className={`cursor-pointer hover:bg-accent/50 transition-colors ${nextPendente ? getRowClassName(nextPendente) : ""}`}
+                            className={`cursor-pointer transition-colors ${nextPendente ? getRowClassName(nextPendente) : ""}`}
                             onClick={() => toggleGrupo(expandKey)}
                           >
                             <TableCell onClick={(e) => { e.stopPropagation(); toggleThisGrupo(); }}>
@@ -1155,8 +1129,7 @@ export default function ContasPage() {
                               if (col.key === "tipo") return (
                                 <TableCell key="tipo">
                                   <div className="flex flex-col gap-0.5">
-                                    {item.tipoFinanceiro === "CAPEX" && <Badge className="bg-blue-600 text-white text-xs w-fit">CAPEX</Badge>}
-                                    {item.tipoFinanceiro === "OPEX" && <Badge className="bg-orange-600 text-white text-xs w-fit">OPEX</Badge>}
+                                    {item.tipoFinanceiro && <StatusBadge status={item.tipoFinanceiro} context="financeiro" />}
                                     <span className="text-xs text-muted-foreground">{pagas}/{grupo2.length}x pagas</span>
                                   </div>
                                 </TableCell>
@@ -1170,7 +1143,7 @@ export default function ContasPage() {
                               if (col.key === "situacao") return (
                                 <TableCell key="situacao">
                                   {pagas === grupo2.length
-                                    ? <Badge className="bg-green-600 text-white">Pago</Badge>
+                                    ? <StatusBadge status="Pago" context="conta" />
                                     : <Badge className="bg-yellow-500 text-white">{pagas}/{grupo2.length}</Badge>
                                   }
                                 </TableCell>
@@ -1179,16 +1152,6 @@ export default function ContasPage() {
                             })}
                             <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1">
-                                {effectiveGrupoId && (
-                                  <Button
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    onClick={() => openEditGrupo(effectiveGrupoId)}
-                                    title="Editar grupo"
-                                  >
-                                    <Pencil className="size-4" />
-                                  </Button>
-                                )}
                                 <span className="text-xs text-muted-foreground">{grupo2.length}x de {formatPrice(item.valor)}</span>
                               </div>
                             </TableCell>
@@ -1201,7 +1164,7 @@ export default function ContasPage() {
                             rows.push(
                               <TableRow
                                 key={parcela.id}
-                                className={`hover:bg-accent/50 transition-colors ${getRowClassName(parcela)}`}
+                                className={`transition-colors ${getRowClassName(parcela)}`}
                                 onDoubleClick={() => openEditConta(parcela)}
                               >
                                 <TableCell onClick={(e) => e.stopPropagation()}>
@@ -1236,10 +1199,7 @@ export default function ContasPage() {
                                         <Check className="size-4 text-green-500" />
                                       </Button>
                                     )}
-                                    <Button variant="ghost" size="icon-sm" onClick={() => openEditConta(parcela)}>
-                                      <Pencil className="size-4" />
-                                    </Button>
-                                    <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteConta(parcela.id)}>
+                                    <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteConta(parcela.id)} title="Excluir">
                                       <Trash2 className="size-4 text-destructive" />
                                     </Button>
                                   </div>
@@ -1253,7 +1213,7 @@ export default function ContasPage() {
                         rows.push(
                           <TableRow
                             key={item.id}
-                            className={`cursor-pointer hover:bg-accent/50 transition-colors ${getRowClassName(item)}`}
+                            className={`cursor-pointer transition-colors ${getRowClassName(item)}`}
                             onDoubleClick={() => openEditConta(item)}
                           >
                             <TableCell onClick={(e) => e.stopPropagation()}>
@@ -1276,10 +1236,7 @@ export default function ContasPage() {
                                     <Check className="size-4 text-green-500" />
                                   </Button>
                                 )}
-                                <Button variant="ghost" size="icon-sm" onClick={() => openEditConta(item)}>
-                                  <Pencil className="size-4" />
-                                </Button>
-                                <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteConta(item.id)}>
+                                <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteConta(item.id)} title="Excluir">
                                   <Trash2 className="size-4 text-destructive" />
                                 </Button>
                               </div>
@@ -1524,17 +1481,21 @@ export default function ContasPage() {
               <TableBody>
                 {fornecedoresLoading ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">Carregando...</TableCell>
+                    <TableCell colSpan={3}>
+                      <TableSkeleton rows={4} cols={3} />
+                    </TableCell>
                   </TableRow>
                 ) : fornecedores.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">Nenhum fornecedor cadastrado</TableCell>
+                    <TableCell colSpan={3}>
+                      <EmptyState icon={Store} title="Nenhum fornecedor cadastrado" />
+                    </TableCell>
                   </TableRow>
                 ) : (
                   fornecedores.map((item) => (
                     <TableRow
                       key={item.id}
-                      className="cursor-pointer hover:bg-accent/50 transition-colors"
+                      className="cursor-pointer transition-colors"
                       onDoubleClick={() => openEditFornecedor(item)}
                     >
                       <TableCell className="font-medium">{item.nome}</TableCell>
@@ -1543,10 +1504,7 @@ export default function ContasPage() {
                       </TableCell>
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="icon-sm" onClick={() => openEditFornecedor(item)}>
-                            <Pencil className="size-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteFornecedor(item.id)}>
+                          <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteFornecedor(item.id)} title="Excluir">
                             <Trash2 className="size-4 text-destructive" />
                           </Button>
                         </div>
@@ -1589,9 +1547,9 @@ export default function ContasPage() {
       {tab === "categorias" && (
         <>
           {categoriasLoading ? (
-            <div className="text-center py-8 text-muted-foreground">Carregando...</div>
+            <TableSkeleton rows={4} cols={2} />
           ) : categorias.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">Nenhuma categoria cadastrada</div>
+            <EmptyState icon={Tag} title="Nenhuma categoria cadastrada" />
           ) : (
             <div className="space-y-3">
               {categorias.map((cat) => {
@@ -1616,10 +1574,7 @@ export default function ContasPage() {
                         >
                           <Plus className="size-4 text-muted-foreground" />
                         </Button>
-                        <Button variant="ghost" size="icon-sm" onClick={() => openEditCategoria(cat)} title="Renomear categoria">
-                          <Pencil className="size-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteCategoria(cat.id)}>
+                        <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteCategoria(cat.id)} title="Excluir">
                           <Trash2 className="size-4 text-destructive" />
                         </Button>
                       </div>

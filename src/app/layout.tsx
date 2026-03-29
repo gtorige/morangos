@@ -28,6 +28,8 @@ import {
   GripVertical,
   Pencil,
   Check,
+  Bell,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -237,23 +239,6 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       </div>
       <Separator />
       <nav className="flex-1 flex flex-col gap-1 p-3">
-        <button
-          type="button"
-          onClick={() => setEditMode(!editMode)}
-          className="flex items-center gap-2 rounded-lg px-3 py-1.5 mb-1 text-xs font-medium text-muted-foreground/60 hover:text-muted-foreground transition-colors self-start"
-        >
-          {editMode ? (
-            <>
-              <Check className="h-3 w-3" />
-              Concluir
-            </>
-          ) : (
-            <>
-              <Pencil className="h-3 w-3" />
-              Editar Menu
-            </>
-          )}
-        </button>
         {orderedItems.map((item, index) => {
           const Icon = item.icon;
           const isActive = pathname.startsWith(item.href);
@@ -328,6 +313,17 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         )}
       </nav>
 
+      <button
+        type="button"
+        onClick={() => setEditMode(!editMode)}
+        className="flex items-center gap-2 mx-3 mb-1 px-3 py-1.5 text-xs font-medium text-muted-foreground/40 hover:text-muted-foreground transition-colors self-start rounded-lg"
+      >
+        {editMode ? (
+          <><Check className="h-3 w-3" /> Concluir</>
+        ) : (
+          <><Pencil className="h-3 w-3" /> Editar Menu</>
+        )}
+      </button>
       {session?.user && (
         <>
           <Separator />
@@ -415,6 +411,9 @@ interface Notificacoes {
 
 function NotificationBanners() {
   const [notifs, setNotifs] = useState<Notificacoes | null>(null);
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem("notif-collapsed") === "1"; } catch { return false; }
+  });
 
   useEffect(() => {
     fetch("/api/notificacoes")
@@ -464,6 +463,25 @@ function NotificationBanners() {
       icon: <AlertTriangle className="size-3.5 shrink-0" />,
     });
 
+  function toggle() {
+    const next = !collapsed;
+    setCollapsed(next);
+    try { localStorage.setItem("notif-collapsed", next ? "1" : "0"); } catch {}
+  }
+
+  if (collapsed) {
+    return (
+      <button
+        onClick={toggle}
+        className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-1.5 mb-4 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <Bell className="size-3.5" />
+        <span className="bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">{items.length}</span>
+        <span>Notificações</span>
+      </button>
+    );
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border bg-muted/30 px-3 py-1.5 mb-4">
       {items.map((item, i) => (
@@ -472,6 +490,9 @@ function NotificationBanners() {
           {item.label}
         </Link>
       ))}
+      <button onClick={toggle} className="ml-auto text-muted-foreground/50 hover:text-muted-foreground transition-colors">
+        <X className="size-3.5" />
+      </button>
     </div>
   );
 }

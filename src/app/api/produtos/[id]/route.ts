@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "../../../../../auth";
+import { withAuth, parseBody, parseId, ApiError } from "@/lib/api-helpers";
+import { produtoUpdateSchema } from "@/lib/schemas";
 
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { id } = await params;
+    const idNum = parseId(id);
+
     const produto = await prisma.produto.findUnique({
-      where: { id: Number(id) },
+      where: { id: idNum },
     });
 
     if (!produto) {
@@ -25,75 +23,46 @@ export async function GET(
     }
 
     return NextResponse.json(produto);
-  } catch (error) {
-    console.error("Erro ao buscar produto:", error);
-    return NextResponse.json(
-      { error: "Erro ao buscar produto" },
-      { status: 500 }
-    );
-  }
+  });
 }
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { id } = await params;
-    const idNum = parseInt(id);
-    if (isNaN(idNum)) {
-      return NextResponse.json({ error: "ID inválido" }, { status: 400 });
-    }
-    const body = await request.json();
-    const { nome, preco } = body;
+    const idNum = parseId(id);
+    const data = await parseBody(request, produtoUpdateSchema);
+
     const produto = await prisma.produto.update({
       where: { id: idNum },
-      data: { nome, preco },
+      data,
     });
 
     return NextResponse.json(produto);
-  } catch (error) {
-    console.error("Erro ao atualizar produto:", error);
-    return NextResponse.json(
-      { error: "Erro ao atualizar produto" },
-      { status: 500 }
-    );
-  }
+  });
 }
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-    }
-
+  return withAuth(async () => {
     const { id } = await params;
-    const produtoId = Number(id);
+    const produtoId = parseId(id);
 
-    // Check if product is used in any orders
     const itensCount = await prisma.pedidoItem.count({
       where: { produtoId },
     });
 
     if (itensCount > 0) {
-      return NextResponse.json(
-        {
-          error: `Este produto está vinculado a ${itensCount} item(ns) de pedido e não pode ser excluído para manter o histórico.`,
-        },
-        { status: 400 }
+      throw new ApiError(
+        `Este produto está vinculado a ${itensCount} item(ns) de pedido e não pode ser excluído para manter o histórico.`,
+        400
       );
     }
 
-    // Check for related promotions
     const promocoesCount = await prisma.promocao.count({
       where: { produtoId },
     });
@@ -111,17 +80,11 @@ export async function DELETE(
       );
     }
 
-    // Delete related promotions and product in a transaction
     await prisma.$transaction(async (tx) => {
       await tx.promocao.deleteMany({ where: { produtoId } });
       await tx.produto.delete({ where: { id: produtoId } });
     });
+
     return NextResponse.json({ message: "Produto excluído com sucesso" });
-  } catch (error) {
-    console.error("Erro ao excluir produto:", error);
-    return NextResponse.json(
-      { error: "Erro ao excluir produto" },
-      { status: 500 }
-    );
-  }
+  });
 }

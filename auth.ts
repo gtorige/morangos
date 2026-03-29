@@ -39,37 +39,24 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   pages: {
     signIn: "/login",
   },
+  trustHost: true,
   useSecureCookies: false,
-  cookies: {
-    sessionToken: {
-      name: "authjs.session-token",
-      options: {
-        httpOnly: true,
-        sameSite: "lax" as const,
-        path: "/",
-        secure: false,
-      },
-    },
-    csrfToken: {
-      name: "authjs.csrf-token",
-      options: {
-        httpOnly: true,
-        sameSite: "lax" as const,
-        path: "/",
-        secure: false,
-      },
-    },
-    callbackUrl: {
-      name: "authjs.callback-url",
-      options: {
-        httpOnly: true,
-        sameSite: "lax" as const,
-        path: "/",
-        secure: false,
-      },
-    },
-  },
   callbacks: {
+    authorized({ auth, request }) {
+      const isLoggedIn = !!auth?.user;
+      const { pathname } = request.nextUrl;
+
+      // Public paths — no auth required
+      const publicPaths = ["/login", "/setup", "/api/login", "/api/setup", "/api/auth"];
+      if (publicPaths.some((p) => pathname.startsWith(p))) {
+        return true;
+      }
+
+      // Redirect unauthenticated users to login
+      if (!isLoggedIn) return false;
+
+      return true;
+    },
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
@@ -87,5 +74,4 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return session;
     },
   },
-  trustHost: true,
 });
