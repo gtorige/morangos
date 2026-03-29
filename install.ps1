@@ -44,6 +44,24 @@ function Refresh-Path {
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 }
 
+# Pasta de backup segura (fora do projeto, sobrevive a reinstalação)
+$safeBackupDir = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "MorangosBackups"
+
+function Backup-Database {
+    param([string]$motivo)
+    $dbPath = Join-Path $morangosDir "prisma\dev.db"
+    if (-not (Test-Path $dbPath)) { return }
+    if (-not (Test-Path $safeBackupDir)) {
+        New-Item -Path $safeBackupDir -ItemType Directory -Force | Out-Null
+    }
+    $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+    $backupPath = Join-Path $safeBackupDir "dev_${timestamp}_${motivo}.db"
+    Copy-Item $dbPath $backupPath -Force
+    Write-Host "Backup seguro: $backupPath ($([math]::Round((Get-Item $backupPath).Length / 1KB)) KB)" -ForegroundColor Green
+    # Manter apenas os 10 mais recentes
+    Get-ChildItem $safeBackupDir -Filter "dev_*.db" | Sort-Object LastWriteTime -Descending | Select-Object -Skip 10 | Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
 # ============================================================
 # STEP 1 — DETECTAR SE JA ESTA INSTALADO
 # ============================================================
@@ -133,7 +151,10 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
             $envBackupPath = Join-Path $backupDir "env_$timestamp.bak"
 
             try {
-                # Salvar backup do banco
+                # Salvar backup seguro (fora da pasta do projeto)
+                Backup-Database "update"
+
+                # Salvar backup do banco (dentro do projeto)
                 if (Test-Path $dbPath) {
                     Copy-Item $dbPath $dbBackupPath -Force
                     Write-Host "Backup do banco: backups\dev_$timestamp.db" -ForegroundColor Green
@@ -223,10 +244,14 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
             Write-Host "  DESINSTALAR MORANGOS" -ForegroundColor Red
             Write-Host "================================================" -ForegroundColor Red
             Write-Host ""
+            # Backup seguro antes de desinstalar
+            Backup-Database "pre-uninstall"
+            Write-Host ""
             Write-Host "ATENCAO: Isso vai remover:" -ForegroundColor Yellow
-            Write-Host "  - Todos os dados (pedidos, clientes, etc.)" -ForegroundColor DarkGray
             Write-Host "  - O aplicativo inteiro" -ForegroundColor DarkGray
             Write-Host "  - O atalho da area de trabalho" -ForegroundColor DarkGray
+            Write-Host ""
+            Write-Host "Seus dados foram salvos em: $safeBackupDir" -ForegroundColor Green
             Write-Host ""
             $confirm = Read-Host "Digite DESINSTALAR para confirmar"
             if ($confirm -ne "DESINSTALAR") {
@@ -360,6 +385,15 @@ if ((Test-Path $morangosDir) -and (Test-Path (Join-Path $morangosDir ".installed
     Write-Host "Baixando o aplicativo..." -ForegroundColor Yellow
     Write-Host "Instalando em: $morangosDir" -ForegroundColor DarkGray
     if (Test-Path $morangosDir) {
+        # Proteger banco existente antes de apagar a pasta
+        $existingDb = Join-Path $morangosDir "prisma\dev.db"
+        if (Test-Path $existingDb) {
+            Write-Host ""
+            Write-Host "ATENCAO: Banco de dados encontrado na pasta existente!" -ForegroundColor Yellow
+            Backup-Database "pre-reinstall"
+            Write-Host "Backup salvo em: $safeBackupDir" -ForegroundColor Green
+            Write-Host ""
+        }
         Remove-Item $morangosDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     Set-Location $installDir
