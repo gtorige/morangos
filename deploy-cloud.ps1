@@ -188,50 +188,40 @@ const client = createClient({
 async function run() {
   // 1. Generate schema SQL via prisma (outputs UTF-8 to stdout)
   console.log("Generating schema...");
-  let schema;
-  try {
-    schema = execSync("npx.cmd prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script", { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
-  } catch (e) {
-    // execSync throws on non-zero exit but stdout may still have the SQL
-    schema = e.stdout || "";
-    if (!schema) { console.error("Failed to generate schema:", e.stderr || e.message); process.exit(1); }
-  }
-  console.log("Schema SQL length: " + schema.length + " chars");
-  const stmts = schema.split(";").map(s => s.trim()).filter(s => s.length > 0 && !s.startsWith("--"));
+  const schema = execSync("npx.cmd prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script", { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+  console.log("Schema: " + schema.length + " chars");
 
-  // 2. Drop existing tables first (clean slate)
   console.log("Cleaning existing tables...");
+  await client.executeMultiple("PRAGMA foreign_keys = OFF;");
   const existing = await client.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_prisma%'");
-  await client.execute("PRAGMA foreign_keys = OFF;");
   for (const row of existing.rows) {
-    try { await client.execute('DROP TABLE IF EXISTS "' + row.name + '";'); } catch {}
+    try { await client.execute('DROP TABLE IF EXISTS "' + row.name + '"'); } catch {}
   }
 
-  // 3. Apply schema
-  console.log("Applying schema (" + stmts.length + " statements)...");
-  for (const stmt of stmts) {
-    try {
-      await client.execute(stmt + ";");
-    } catch (e) {
-      if (!e.message.includes("already exists")) console.log("  WARN: " + e.message.substring(0, 80));
-    }
-  }
+  console.log("Applying schema...");
+  await client.executeMultiple(schema);
   console.log("Schema applied!");
 
-  // 4. Import data if import.sql exists
   if (fs.existsSync("import.sql")) {
-    const sql = fs.readFileSync("import.sql", "utf8");
-    const rows = sql.split("\n").map(s => s.trim()).filter(s => s.length > 0);
-    if (rows.length > 0) {
-      console.log("Importing " + rows.length + " rows...");
-      let ok = 0, err = 0;
-      for (const row of rows) {
-        try { await client.execute(row); ok++; } catch (e) { err++; if (err <= 3) console.log("  ERR: " + e.message.substring(0,80)); }
+    const importSql = fs.readFileSync("import.sql", "utf8");
+    const rowCount = importSql.split("\n").filter(s => s.trim()).length;
+    if (rowCount > 0) {
+      console.log("Importing " + rowCount + " rows...");
+      try {
+        await client.executeMultiple(importSql);
+        console.log("Import complete!");
+      } catch (e) {
+        console.log("Batch failed, trying row by row...");
+        const rows = importSql.split("\n").filter(s => s.trim());
+        let ok = 0, err = 0;
+        for (const row of rows) {
+          try { await client.execute(row); ok++; } catch { err++; }
+        }
+        console.log("Imported: " + ok + " OK" + (err > 0 ? ", " + err + " errors" : ""));
       }
-      console.log("Imported: " + ok + " OK" + (err > 0 ? ", " + err + " errors" : ""));
     }
   }
-  await client.execute("PRAGMA foreign_keys = ON;");
+  await client.executeMultiple("PRAGMA foreign_keys = ON;");
 
   // 5. Verify
   const tables = await client.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_prisma%'");
