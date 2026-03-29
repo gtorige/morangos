@@ -33,7 +33,13 @@ export async function processOrderItems(
   ]);
 
   const produtoMap = new Map(allProdutos.map((p) => [p.id, p]));
-  const promocaoMap = new Map(allPromocoes.map((p) => [p.produtoId, p]));
+  // Group all promotions by product (supports multiple promos per product)
+  const promocoesMap = new Map<number, typeof allPromocoes>();
+  for (const p of allPromocoes) {
+    const list = promocoesMap.get(p.produtoId) ?? [];
+    list.push(p);
+    promocoesMap.set(p.produtoId, list);
+  }
 
   const itensProcessados: ProcessedItem[] = itens.map((item) => {
     // If a non-zero precoUnitario override is provided, use it directly
@@ -47,9 +53,21 @@ export async function processOrderItems(
     }
 
     const produtoId = item.produtoId;
-    const promocao = promocaoMap.get(produtoId) ?? null;
+    const promos = promocoesMap.get(produtoId) ?? [];
     const produto = produtoMap.get(produtoId);
     const precoBase = produto?.preco ?? 0;
+
+    // For quantidade_minima: find the best matching tier (highest quantidadeMinima that item qualifies for)
+    const bestQuantidadeMinima = promos
+      .filter((p) => p.tipo === "quantidade_minima" && p.quantidadeMinima != null && item.quantidade >= p.quantidadeMinima)
+      .sort((a, b) => (b.quantidadeMinima ?? 0) - (a.quantidadeMinima ?? 0))[0] ?? null;
+
+    // Priority: quantidade_minima (best tier) > desconto > leve_x_pague_y
+    // compra_parceira is handled in second pass, not here
+    const promocao = bestQuantidadeMinima
+      ?? promos.find((p) => p.tipo === "desconto")
+      ?? promos.find((p) => p.tipo === "leve_x_pague_y")
+      ?? null;
 
     let precoUnitario: number;
     let subtotal: number;
@@ -72,7 +90,7 @@ export async function processOrderItems(
       precoUnitario =
         min > 0 && item.quantidade >= min ? promocao.precoPromocional : precoBase;
       subtotal = precoUnitario * item.quantidade;
-    } else if (promocao && promocao.tipo === "compra_casada") {
+    } else if (promocao && promocao.tipo === "compra_parceira") {
       // Bundle: handled in second pass
       precoUnitario = precoBase;
       subtotal = precoUnitario * item.quantidade;
@@ -87,10 +105,12 @@ export async function processOrderItems(
     return { produtoId, quantidade: item.quantidade, precoUnitario, subtotal };
   });
 
-  // Second pass: apply "compra_casada" (bundle) promotions
+  // Second pass: apply "compra_parceira" (bundle) promotions
+  // NOTE: Existing DB records may still have tipo="compra_casada". A data migration is needed
+  // to update those records to "compra_parceira".
   const produtoIdSet = new Set(produtoIds);
   for (const promocao of allPromocoes) {
-    if (promocao.tipo !== "compra_casada" || !promocao.produtoId2) continue;
+    if (promocao.tipo !== "compra_parceira" || !promocao.produtoId2) continue;
     if (!produtoIdSet.has(promocao.produtoId)) continue;
     const targetItem = itensProcessados.find((i) => i.produtoId === promocao.produtoId2);
     if (!targetItem) continue;

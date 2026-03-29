@@ -31,7 +31,9 @@
       "Bash(findstr LISTENING)",
       "Bash(node -e \":*)",
       "Bash(npx.cmd next:*)",
-      "Bash(taskkill //F //PID 40012)"
+      "Bash(taskkill //F //PID 40012)",
+      "Bash(npx tsc:*)",
+      "Bash(npx next:*)"
     ]
   }
 }

@@ -180,8 +180,24 @@ export default function NovoPedidoPage() {
       )
     : clientes;
 
-  function getPromocaoForProduto(produtoId: string): Promocao | undefined {
-    return promocoes.find((p) => String(p.produtoId) === produtoId);
+  function getPromocaoForProduto(produtoId: string, quantidade?: number): Promocao | undefined {
+    const promos = promocoes.filter((p) => String(p.produtoId) === produtoId);
+    if (promos.length === 0) return undefined;
+
+    // For quantidade_minima: find the best matching tier
+    if (quantidade != null) {
+      const bestQtdMin = promos
+        .filter((p) => p.tipo === "quantidade_minima" && p.quantidadeMinima != null && quantidade >= p.quantidadeMinima)
+        .sort((a, b) => (b.quantidadeMinima ?? 0) - (a.quantidadeMinima ?? 0))[0];
+      if (bestQtdMin) return bestQtdMin;
+    }
+
+    const priorityOrder = ["desconto", "leve_x_pague_y"];
+    for (const tipo of priorityOrder) {
+      const found = promos.find((p) => p.tipo === tipo);
+      if (found) return found;
+    }
+    return undefined;
   }
 
   // Close product dropdowns on outside click
@@ -248,7 +264,7 @@ export default function NovoPedidoPage() {
 
   function calcSubtotal(item: ItemPedido): { subtotal: number; qtdCobrada: number | null } {
     const qty = parseFloat(item.quantidade || "0");
-    const promo = !item.precoManual ? getPromocaoForProduto(item.produtoId) : undefined;
+    const promo = !item.precoManual ? getPromocaoForProduto(item.produtoId, qty) : undefined;
     const tipo = promo ? (promo.tipo || "desconto") : undefined;
     const subtotal = calcSubtotalBase(qty, item.precoUnitario, tipo, promo?.leveQuantidade, promo?.pagueQuantidade, promo?.quantidadeMinima, promo?.precoPromocional);
     const plainSubtotal = item.precoUnitario * qty;
@@ -264,7 +280,7 @@ export default function NovoPedidoPage() {
   }
 
   function handleRemoveItem(index: number) {
-    setItens(applyCompradaCasadaDiscounts(itens.filter((_, i) => i !== index)));
+    setItens(applyCompraParceiraDiscounts(itens.filter((_, i) => i !== index)));
   }
 
   function handleItemChange(
@@ -291,15 +307,16 @@ export default function NovoPedidoPage() {
       }
     } else if (field === "quantidade") {
       item.quantidade = value;
-      // For quantidade_minima promos, update the displayed unit price dynamically
       if (!item.precoManual) {
-        const promo = getPromocaoForProduto(item.produtoId);
-        if (promo && promo.tipo === "quantidade_minima" && promo.quantidadeMinima && promo.precoPromocional) {
-          const qty = parseFloat(value) || 0;
-          const produto = produtos.find((p) => String(p.id) === item.produtoId);
-          item.precoUnitario = qty >= promo.quantidadeMinima
-            ? promo.precoPromocional
-            : (produto?.preco ?? item.precoUnitario);
+        const qty = parseFloat(value) || 0;
+        const produto = produtos.find((p) => String(p.id) === item.produtoId);
+        const promo = getPromocaoForProduto(item.produtoId, qty);
+        if (promo && promo.tipo === "quantidade_minima" && promo.quantidadeMinima && promo.precoPromocional && qty >= promo.quantidadeMinima) {
+          item.precoUnitario = promo.precoPromocional;
+        } else if (promo && promo.tipo === "desconto" && promo.precoPromocional) {
+          item.precoUnitario = promo.precoPromocional;
+        } else {
+          item.precoUnitario = produto?.preco ?? item.precoUnitario;
         }
       }
       const { subtotal } = calcSubtotalFor(item);
@@ -312,37 +329,31 @@ export default function NovoPedidoPage() {
     }
 
     updated[index] = item;
-    setItens(applyCompradaCasadaDiscounts(updated));
+    setItens(applyCompraParceiraDiscounts(updated));
   }
 
   function calcSubtotalFor(item: ItemPedido): { subtotal: number; qtdCobrada: number | null } {
     return calcSubtotal(item);
   }
 
-  // Apply compra_casada discounts to partner products when primary is in order
-  function applyCompradaCasadaDiscounts(items: ItemPedido[]): ItemPedido[] {
+  // Apply compra_parceira discounts to partner products when primary is in order
+  function applyCompraParceiraDiscounts(items: ItemPedido[]): ItemPedido[] {
     const produtoIdSet = new Set(items.map((i) => i.produtoId));
     return items.map((item) => {
       if (item.precoManual) return item;
-      const casadaPromo = promocoes.find(
-        (p) => p.tipo === "compra_casada" && p.produtoId2 !== null && String(p.produtoId2) === item.produtoId
+      const parceiraPromo = promocoes.find(
+        (p) => p.tipo === "compra_parceira" && p.produtoId2 !== null && String(p.produtoId2) === item.produtoId
       );
-      if (!casadaPromo) return item;
-      const primaryInOrder = produtoIdSet.has(String(casadaPromo.produtoId));
+      if (!parceiraPromo) return item;
+      const primaryInOrder = produtoIdSet.has(String(parceiraPromo.produtoId));
       const qty = parseFloat(item.quantidade) || 0;
       if (primaryInOrder) {
-        const newPrice = casadaPromo.precoPromocional;
+        const activePromo = getPromocaoForProduto(item.produtoId, qty);
+        if (activePromo) return item;
+        const newPrice = parceiraPromo.precoPromocional;
         return { ...item, precoUnitario: newPrice, subtotal: qty * newPrice };
-      } else {
-        // Primary removed — reset to base price
-        const produto = produtos.find((p) => String(p.id) === item.produtoId);
-        if (!produto) return item;
-        const regularPromo = promocoes.find(
-          (p) => String(p.produtoId) === item.produtoId && (p.tipo || "desconto") === "desconto" && p.precoPromocional
-        );
-        const basePrice = regularPromo ? regularPromo.precoPromocional : produto.preco;
-        return { ...item, precoUnitario: basePrice, subtotal: qty * basePrice };
       }
+      return item;
     });
   }
 
@@ -621,18 +632,15 @@ export default function NovoPedidoPage() {
             ) : (
               <>
                 {itens.map((item, index) => {
-                  const promo = getPromocaoForProduto(item.produtoId);
+                  const qty = parseFloat(item.quantidade || "0");
+                  const promo = getPromocaoForProduto(item.produtoId, qty);
                   const produto = produtos.find((p) => String(p.id) === item.produtoId);
                   const { subtotal, qtdCobrada } = calcSubtotal(item);
-                  const isDescontoPromo = promo && (promo.tipo || "desconto") === "desconto";
-                  const isLevePromo = promo && promo.tipo === "leve_x_pague_y";
-                  const isQtdMinPromo = promo && promo.tipo === "quantidade_minima";
-                  const isCasadaPromo = promo && promo.tipo === "compra_casada";
-                  // Partner detection: this item is produtoId2 of a compra_casada promo
-                  const casadaPartnerPromo = promocoes.find(
-                    (p) => p.tipo === "compra_casada" && p.produtoId2 !== null && String(p.produtoId2) === item.produtoId
+                  // Partner detection: this item is produtoId2 of a compra_parceira promo
+                  const parceiraPartnerPromo = promocoes.find(
+                    (p) => p.tipo === "compra_parceira" && p.produtoId2 !== null && String(p.produtoId2) === item.produtoId
                   );
-                  const isCasadaPartnerActive = casadaPartnerPromo && itens.some((i) => String(casadaPartnerPromo.produtoId) === i.produtoId);
+                  const isParceiraPartnerActive = parceiraPartnerPromo && itens.some((i) => String(parceiraPartnerPromo.produtoId) === i.produtoId);
 
                   return (
                     <div key={index} className="space-y-1">
@@ -768,43 +776,53 @@ export default function NovoPedidoPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 pl-0.5">
-                        {isDescontoPromo && produto && (
-                          <>
-                            <Badge className="bg-green-600 text-white text-xs">
-                              Promo: {formatPrice(promo.precoPromocional)}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground line-through">
-                              {formatPrice(produto.preco)}
-                            </span>
-                          </>
-                        )}
-                        {isLevePromo && (
-                          <Badge className="bg-blue-600 text-white text-xs">
-                            Leve {promo.leveQuantidade} Pague {promo.pagueQuantidade}
-                          </Badge>
-                        )}
-                        {isQtdMinPromo && promo.quantidadeMinima && (
-                          <Badge className="bg-purple-600 text-white text-xs">
-                            A partir de {promo.quantidadeMinima} un.: {formatPrice(promo.precoPromocional)}
-                          </Badge>
-                        )}
-                        {isCasadaPromo && (
-                          <Badge className="bg-orange-600/60 text-white text-xs">
-                            Compra casada
-                          </Badge>
-                        )}
-                        {isCasadaPartnerActive && casadaPartnerPromo && (
-                          <Badge className="bg-orange-600 text-white text-xs">
-                            Compra casada: {formatPrice(casadaPartnerPromo.precoPromocional)}
-                          </Badge>
-                        )}
-                        {qtdCobrada !== null && (
-                          <span className="text-xs text-muted-foreground">
-                            ({qtdCobrada} un. cobradas)
-                          </span>
-                        )}
-                      </div>
+                      {/* Show ALL promotions for this product, highlight the active one */}
+                      {(() => {
+                        const allPromos = promocoes.filter((p) => String(p.produtoId) === item.produtoId);
+                        const parceiraPartnerPromo = promocoes.find(
+                          (p) => p.tipo === "compra_parceira" && p.produtoId2 !== null && String(p.produtoId2) === item.produtoId
+                        );
+                        const isParceiraPartnerActive = parceiraPartnerPromo && itens.some((i) => String(parceiraPartnerPromo.produtoId) === i.produtoId);
+                        if (allPromos.length === 0 && !isParceiraPartnerActive) return null;
+                        return (
+                          <div className="flex items-center gap-1.5 pl-0.5 flex-wrap">
+                            {allPromos.map((p) => {
+                              const isActive = promo?.id === p.id;
+                              const opacity = isActive ? "" : "opacity-40";
+                              if (p.tipo === "desconto") return (
+                                <Badge key={p.id} className={`bg-green-600 text-white text-xs ${opacity}`}>
+                                  {p.nome || `Promo: ${formatPrice(p.precoPromocional)}`}
+                                </Badge>
+                              );
+                              if (p.tipo === "leve_x_pague_y") return (
+                                <Badge key={p.id} className={`bg-blue-600 text-white text-xs ${opacity}`}>
+                                  Leve {p.leveQuantidade} Pague {p.pagueQuantidade}
+                                </Badge>
+                              );
+                              if (p.tipo === "quantidade_minima") return (
+                                <Badge key={p.id} className={`bg-purple-600 text-white text-xs ${opacity}`}>
+                                  {p.quantidadeMinima}+ un. → {formatPrice(p.precoPromocional)}
+                                </Badge>
+                              );
+                              if (p.tipo === "compra_parceira") return (
+                                <Badge key={p.id} className={`bg-orange-600/60 text-white text-xs ${opacity}`}>
+                                  Compra parceira
+                                </Badge>
+                              );
+                              return null;
+                            })}
+                            {isParceiraPartnerActive && parceiraPartnerPromo && (
+                              <Badge className="bg-orange-600 text-white text-xs">
+                                Parceira: {formatPrice(parceiraPartnerPromo.precoPromocional)}
+                              </Badge>
+                            )}
+                            {produto && promo && item.precoUnitario !== produto.preco && (
+                              <span className="text-xs text-muted-foreground line-through">{formatPrice(produto.preco)}</span>
+                            )}
+                            {qtdCobrada !== null && <span className="text-xs text-muted-foreground">({qtdCobrada} un. cobradas)</span>}
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })}
