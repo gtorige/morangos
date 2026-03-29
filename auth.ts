@@ -1,7 +1,5 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
-import { prisma } from "@/lib/prisma";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -12,6 +10,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
       async authorize(credentials) {
         if (!credentials?.username || !credentials?.password) return null;
+
+        // Dynamic imports to avoid bundling prisma/bcrypt in Edge Middleware
+        const { prisma } = await import("@/lib/prisma");
+        const bcrypt = await import("bcryptjs");
 
         const user = await prisma.usuario.findUnique({
           where: { username: credentials.username as string },
@@ -46,13 +48,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       const isLoggedIn = !!auth?.user;
       const { pathname } = request.nextUrl;
 
-      // Public paths — no auth required
       const publicPaths = ["/login", "/setup", "/api/login", "/api/setup", "/api/auth"];
       if (publicPaths.some((p) => pathname.startsWith(p))) {
         return true;
       }
 
-      // Redirect unauthenticated users to login
       if (!isLoggedIn) return false;
 
       return true;
