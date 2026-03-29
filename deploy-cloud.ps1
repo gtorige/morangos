@@ -188,7 +188,15 @@ const client = createClient({
 async function run() {
   // 1. Generate schema SQL via prisma (outputs UTF-8 to stdout)
   console.log("Generating schema...");
-  const schema = execSync("npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script", { encoding: "utf8" });
+  let schema;
+  try {
+    schema = execSync("npx.cmd prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script", { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] });
+  } catch (e) {
+    // execSync throws on non-zero exit but stdout may still have the SQL
+    schema = e.stdout || "";
+    if (!schema) { console.error("Failed to generate schema:", e.stderr || e.message); process.exit(1); }
+  }
+  console.log("Schema SQL length: " + schema.length + " chars");
   const stmts = schema.split(";").map(s => s.trim()).filter(s => s.length > 0 && !s.startsWith("--"));
 
   // 2. Drop existing tables first (clean slate)
