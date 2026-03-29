@@ -1,29 +1,8 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import NextAuth from "next-auth";
+import authConfig from "./auth.config";
 
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  // Public paths
-  const publicPaths = ["/login", "/setup", "/api/login", "/api/setup", "/api/auth"];
-  if (publicPaths.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next();
-  }
-
-  // Check for session cookie
-  const sessionCookie =
-    request.cookies.get("authjs.session-token") ||
-    request.cookies.get("__Secure-authjs.session-token");
-
-  if (!sessionCookie) {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "Nao autenticado." }, { status: 401 });
-    }
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
-
-  return NextResponse.next();
-}
+// Middleware uses the edge-safe config (no prisma/libsql imports)
+export const { auth: middleware } = NextAuth(authConfig);
 
 export const config = {
   matcher: [
