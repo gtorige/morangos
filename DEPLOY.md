@@ -79,59 +79,81 @@ npm install @prisma/adapter-libsql
 
 ### 2.2 Atualizar o `prisma/schema.prisma`
 
-Altere o bloco `datasource`:
-
-```prisma
-// ANTES:
-datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
-}
-
-// DEPOIS:
-datasource db {
-  provider     = "sqlite"
-  url          = env("TURSO_DATABASE_URL")
-  relationMode = "prisma"
-}
-```
-
-E adicione o `previewFeatures` no generator:
+Mantenha o `datasource` apontando para o SQLite local e adicione o `previewFeatures` no generator:
 
 ```prisma
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["driverAdapters"]
 }
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
 ```
 
 ### 2.3 Atualizar o `src/lib/prisma.ts`
 
-Substitua o conteúdo do arquivo:
+Substitua o conteúdo do arquivo por uma versão que:
+- usa SQLite normal no desktop
+- usa `@prisma/adapter-libsql` quando `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` existem
+- aplica um shim no `fetch` para neutralizar o probe `/v1/jobs` do `@libsql/client` 0.6.x em bancos AWS da Turso
 
 ```typescript
 import { PrismaClient } from "@prisma/client";
 import { PrismaLibSQL } from "@prisma/adapter-libsql";
 import { createClient } from "@libsql/client";
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
 
-function createPrismaClient() {
-  if (process.env.TURSO_DATABASE_URL) {
-    // Produção: Turso na nuvem
+function createTursoFetch(baseFetch: typeof fetch): typeof fetch {
+  return async (input, init) => {
+    const url =
+      typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+
+    if (url.endsWith("/v1/jobs") || /\/v1\/jobs\/[^/]+$/.test(url)) {
+      return new Response(JSON.stringify({ error: "Invalid namespace" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    return baseFetch(input, init);
+  };
+}
+
+function patchGlobalFetchForTurso(): void {
+  const globalWithPatchedFetch = globalThis as typeof globalThis & {
+    __morangosTursoFetchPatched?: boolean;
+  };
+
+  if (globalWithPatchedFetch.__morangosTursoFetchPatched) return;
+
+  globalWithPatchedFetch.fetch = createTursoFetch(globalWithPatchedFetch.fetch);
+  globalWithPatchedFetch.__morangosTursoFetchPatched = true;
+}
+
+function createPrismaClient(): PrismaClient {
+  if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
+    patchGlobalFetchForTurso();
+
     const libsql = createClient({
       url: process.env.TURSO_DATABASE_URL!,
       authToken: process.env.TURSO_AUTH_TOKEN!,
+      fetch: globalThis.fetch,
     });
+
     const adapter = new PrismaLibSQL(libsql);
     return new PrismaClient({ adapter });
   }
-  // Desenvolvimento local: SQLite
+
   return new PrismaClient();
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
-
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 ```
 
@@ -174,9 +196,10 @@ Antes de fazer o deploy, adicione as variáveis de ambiente no painel da Vercel:
 
 | Nome | Valor |
 |---|---|
+| `DATABASE_URL` | `file:./dev.db` |
+| `AUTH_SECRET` | uma string aleatória longa |
 | `TURSO_DATABASE_URL` | `libsql://morangos-SEUUSUARIO.turso.io` |
 | `TURSO_AUTH_TOKEN` | `eyJ...` (token do passo 1.4) |
-| `GOOGLE_ROUTES_API_KEY` | (sua chave atual do Google) |
 
 ### 3.4 Fazer o deploy
 
@@ -217,7 +240,7 @@ O sistema vai usar o SQLite local (`prisma/dev.db`) automaticamente, porque `TUR
 ### Build falha na Vercel com erro de Prisma
 ```bash
 # Adicione ao package.json, no script "build":
-"build": "prisma generate && next build"
+"build": "prisma generate && next build --webpack"
 ```
 
 ### Erro "Cannot find module @libsql/client"
@@ -226,6 +249,18 @@ npm install @libsql/client @prisma/adapter-libsql
 git add package.json package-lock.json
 git push
 ```
+
+### Erro `Unexpected status code while fetching migration jobs: 400`
+Se o banco Turso estiver em endpoint AWS (`*.aws-*.turso.io`), o `@libsql/client` 0.6.x pode chamar `/v1/jobs` e receber:
+
+```json
+{"error":"Protocol error: v1 endpoints are not supported at AWS"}
+```
+
+Nesse caso:
+- mantenha o shim do `fetch` em `src/lib/prisma.ts`
+- nao remova o `previewFeatures = ["driverAdapters"]`
+- nao troque o `DATABASE_URL` local pelo `TURSO_DATABASE_URL` no schema
 
 ### Dados não aparecem em produção
 Verifique se o dump foi importado corretamente:
