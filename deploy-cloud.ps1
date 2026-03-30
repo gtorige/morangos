@@ -83,13 +83,15 @@ function Ensure-CloudBuildConfig($deployDir) {
   "buildCommand": "prisma generate && next build --webpack"
 }
 '@
-    Set-Content -Path $vercelJsonPath -Value $vercelJson -Encoding UTF8 -NoNewline
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($vercelJsonPath, $vercelJson, $utf8NoBom)
     Write-Host 'vercel.json alinhado para build com --webpack.' -ForegroundColor Green
 }
 
 function Add-VercelEnvWithoutNewline($deployDir, $name, $value) {
     $tempFile = Join-Path $env:TEMP ("vercel-env-" + $name + ".txt")
-    Set-Content -Path $tempFile -Value $value -Encoding UTF8 -NoNewline
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($tempFile, $value, $utf8NoBom)
     try {
         cmd /c "cd /d `"$deployDir`" && npx vercel env add $name production --force < `"$tempFile`"" 2>&1 | Out-Host
     } finally {
