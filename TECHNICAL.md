@@ -422,12 +422,31 @@ O mesmo `install.ps1` detecta instalacao existente e oferece:
 
 **Backup seguro:** Salva em `Documentos/MorangosBackups/` antes de qualquer operacao destrutiva.
 
-### Nuvem (Vercel + Turso)
+### Nuvem (Vercel + Turso) — Branch `cloud`
 
-Possivel deploy com:
-- Vercel (hosting Next.js) — plano gratuito
-- Turso (SQLite remoto) — plano gratuito
-- Requer alteracao em 2 arquivos: `schema.prisma` e `prisma.ts`
+Deploy funcional em https://morangos-wheat.vercel.app
+
+**Stack cloud:**
+- Vercel (hosting Next.js) — plano Hobby gratuito
+- Turso (SQLite remoto via libsql) — plano Starter gratuito
+- Prisma 5.22 + @prisma/adapter-libsql 5.22 + @libsql/client 0.6.2
+
+**Diferencas da branch cloud vs main:**
+- `auth.config.ts` — Config Edge-safe (sem prisma) para middleware
+- `auth.ts` — Config simplificada, reutiliza auth.config
+- `middleware.ts` — Importa auth.config (nao auth.ts, evita libsql no Edge)
+- `prisma.ts` — Adapter Turso + fetch shim para bug /v1/jobs
+- `next.config.ts` — `serverExternalPackages` para libsql
+- `vercel.json` — Build com `--webpack` (bug Turbopack + middleware)
+- `deploy-cloud.ps1` — Script automatizado de deploy
+
+**Workarounds documentados:**
+1. `@libsql/client` 0.6.x faz probe em `/v1/jobs` que retorna 400 em AWS Turso. Shim no fetch global intercepta e retorna 400 controlado.
+2. Turbopack nao gera `middleware.js.nft.json` corretamente. Build usa `--webpack`.
+3. PowerShell `echo` adiciona newlines em env vars. Script usa arquivo temporario sem BOM.
+4. OneDrive move Desktop para paths diferentes. Script testa multiplos candidatos.
+
+**Instalador:** `deploy-cloud.ps1` na branch `cloud`
 
 ---
 
@@ -435,9 +454,11 @@ Possivel deploy com:
 
 | Variavel | Obrigatoria | Descricao |
 |----------|-------------|-----------|
-| `DATABASE_URL` | Sim | `file:./dev.db` (local) ou URL Turso |
+| `DATABASE_URL` | Sim | `file:./dev.db` (local) |
 | `AUTH_SECRET` | Sim | Chave para JWT (32 chars aleatorios) |
 | `GOOGLE_ROUTES_API_KEY` | Nao | Chave API Google (pode ser salva no banco) |
+| `TURSO_DATABASE_URL` | Cloud | `libsql://...` (apenas branch cloud) |
+| `TURSO_AUTH_TOKEN` | Cloud | Token JWT do Turso (apenas branch cloud) |
 
 ---
 
