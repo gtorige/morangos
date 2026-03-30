@@ -38,6 +38,15 @@ Write-Host '  - Uma conta GitHub (pode criar agora)' -ForegroundColor DarkGray
 Write-Host '  - Uma conta Turso (banco de dados gratis)' -ForegroundColor DarkGray
 Write-Host '  - Uma conta Vercel (hospedagem gratis)' -ForegroundColor DarkGray
 Write-Host ''
+Write-Host '  O script automatiza o clone, install, importacao do banco,' -ForegroundColor White
+Write-Host '  configuracao do .env e os deploys via Vercel CLI.' -ForegroundColor White
+Write-Host ''
+Write-Host '  Interacoes manuais que continuam necessarias:' -ForegroundColor Yellow
+Write-Host '  - Login no Turso pelo navegador' -ForegroundColor DarkGray
+Write-Host '  - Copiar URL e token do banco Turso' -ForegroundColor DarkGray
+Write-Host '  - Login na Vercel (se a CLI nao estiver autenticada)' -ForegroundColor DarkGray
+Write-Host '  - Google Maps e opcional' -ForegroundColor DarkGray
+Write-Host ''
 Write-Host '  Tudo gratuito. Nao precisa cartao de credito.' -ForegroundColor Green
 Write-Host ''
 Pause-Continue
@@ -341,16 +350,23 @@ Show-Step 7 'DEPLOY NA VERCEL'
 
 Write-Host 'Agora vamos publicar o app na Vercel.' -ForegroundColor White
 Write-Host ''
-Write-Host 'O terminal vai pedir para voce fazer login.' -ForegroundColor White
-Write-Host 'Use sua conta GitHub para entrar (mais facil).' -ForegroundColor Yellow
-Write-Host ''
-Pause-Continue
-
-Write-Host 'Fazendo login na Vercel...' -ForegroundColor Yellow
-& npx.cmd vercel login 2>&1 | Out-Host
+Write-Host 'Verificando autenticacao da Vercel CLI...' -ForegroundColor Yellow
+$vercelUser = (& npx.cmd vercel whoami 2>$null)
+if ($LASTEXITCODE -ne 0 -or -not $vercelUser) {
+    Write-Host 'A Vercel CLI ainda nao esta autenticada.' -ForegroundColor Yellow
+    Write-Host 'O terminal vai pedir para voce fazer login.' -ForegroundColor White
+    Write-Host 'Use sua conta GitHub para entrar (mais facil).' -ForegroundColor Yellow
+    Write-Host ''
+    Pause-Continue
+    & npx.cmd vercel login 2>&1 | Out-Host
+} else {
+    Write-Host "Ja autenticado como $vercelUser" -ForegroundColor Green
+}
 
 Write-Host ''
 Write-Host 'Iniciando deploy...' -ForegroundColor Yellow
+Write-Host 'Observacao: na primeira execucao a Vercel ainda pode abrir' -ForegroundColor DarkGray
+Write-Host 'um assistente para criar ou vincular o projeto.' -ForegroundColor DarkGray
 Write-Host 'Quando perguntar, responda:' -ForegroundColor DarkGray
 Write-Host '  Set up and deploy? -> Y' -ForegroundColor DarkGray
 Write-Host '  Which scope? -> Escolha sua conta' -ForegroundColor DarkGray
@@ -364,13 +380,13 @@ Write-Host ''
 
 Write-Host ''
 Write-Host 'Adicionando variaveis de ambiente...' -ForegroundColor Yellow
-Write-Host '(Responda "y" para cada pergunta)' -ForegroundColor DarkGray
+Write-Host '(Sem prompts extras: o script usa --force)' -ForegroundColor DarkGray
 Write-Host ''
 
-echo $tursoUrl | & npx.cmd vercel env add TURSO_DATABASE_URL production 2>&1 | Out-Host
-echo $tursoToken | & npx.cmd vercel env add TURSO_AUTH_TOKEN production 2>&1 | Out-Host
-echo $authSecret | & npx.cmd vercel env add AUTH_SECRET production 2>&1 | Out-Host
-echo 'file:./dev.db' | & npx.cmd vercel env add DATABASE_URL production 2>&1 | Out-Host
+echo $tursoUrl | & npx.cmd vercel env add TURSO_DATABASE_URL production --force 2>&1 | Out-Host
+echo $tursoToken | & npx.cmd vercel env add TURSO_AUTH_TOKEN production --force 2>&1 | Out-Host
+echo $authSecret | & npx.cmd vercel env add AUTH_SECRET production --force 2>&1 | Out-Host
+echo 'file:./dev.db' | & npx.cmd vercel env add DATABASE_URL production --force 2>&1 | Out-Host
 
 Write-Host ''
 Write-Host 'Redeployando com as variaveis...' -ForegroundColor Yellow
@@ -406,7 +422,7 @@ if ($configurarMaps -eq 'S' -or $configurarMaps -eq 's') {
         Write-Host 'Chave invalida. Tente novamente.' -ForegroundColor Red
     }
 
-    echo $apiKey.Trim() | & npx.cmd vercel env add GOOGLE_ROUTES_API_KEY production 2>&1 | Out-Host
+    echo $apiKey.Trim() | & npx.cmd vercel env add GOOGLE_ROUTES_API_KEY production --force 2>&1 | Out-Host
     Write-Host 'API key configurada!' -ForegroundColor Green
     Write-Host 'Redeployando...' -ForegroundColor Yellow
     & npx.cmd vercel --prod --yes 2>&1 | Out-Host
