@@ -334,9 +334,41 @@ const { createClient } = require("@libsql/client");
 const { execSync } = require("child_process");
 const fs = require("fs");
 
+function createTursoFetch(baseFetch) {
+  return async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+
+    if (url.endsWith("/v1/jobs") || /\/v1\/jobs\/[^/]+$/.test(url)) {
+      return new Response(JSON.stringify({ error: "Invalid namespace" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    return baseFetch(input, init);
+  };
+}
+
+function patchGlobalFetchForTurso() {
+  if (globalThis.__morangosTursoFetchPatched) {
+    return;
+  }
+
+  globalThis.fetch = createTursoFetch(globalThis.fetch);
+  globalThis.__morangosTursoFetchPatched = true;
+}
+
+patchGlobalFetchForTurso();
+
 const client = createClient({
   url: process.env.TURSO_DATABASE_URL,
   authToken: process.env.TURSO_AUTH_TOKEN,
+  fetch: globalThis.fetch,
 });
 
 async function run() {
@@ -391,6 +423,70 @@ async function run() {
 run().catch(e => { console.error("Erro:", e.message); process.exit(1); });
 '@
 Set-Content -Path (Join-Path $deployDir 'setup-turso.js') -Value $setupDbScript -Encoding UTF8
+
+$seedInitTursoScript = @'
+require("dotenv").config();
+const { createClient } = require("@libsql/client");
+
+function createTursoFetch(baseFetch) {
+  return async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+
+    if (url.endsWith("/v1/jobs") || /\/v1\/jobs\/[^/]+$/.test(url)) {
+      return new Response(JSON.stringify({ error: "Invalid namespace" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    return baseFetch(input, init);
+  };
+}
+
+function patchGlobalFetchForTurso() {
+  if (globalThis.__morangosTursoFetchPatched) {
+    return;
+  }
+
+  globalThis.fetch = createTursoFetch(globalThis.fetch);
+  globalThis.__morangosTursoFetchPatched = true;
+}
+
+patchGlobalFetchForTurso();
+
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL,
+  authToken: process.env.TURSO_AUTH_TOKEN,
+  fetch: globalThis.fetch,
+});
+
+async function run() {
+  await client.execute(`
+    INSERT OR IGNORE INTO "formas_pagamento" ("id", "nome")
+    VALUES (1, 'Dinheiro'), (2, 'Pix')
+  `);
+
+  await client.execute(`
+    INSERT OR IGNORE INTO "configuracoes" ("chave", "valor")
+    VALUES ('endereco_partida', '')
+  `);
+
+  console.log("OK formas de pagamento");
+  console.log("OK configuracao inicial");
+  console.log("Seed inicial completo!");
+}
+
+run().catch((e) => {
+  console.error("Erro:", e.message);
+  process.exit(1);
+});
+'@
+Set-Content -Path (Join-Path $deployDir 'seed-init-turso.js') -Value $seedInitTursoScript -Encoding UTF8
 
 # Verificar se existe banco local para importar
 $localDbPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'morangos\prisma\dev.db'
@@ -473,16 +569,23 @@ db.close();
 Write-Host ''
 Write-Host 'Aplicando schema e dados no Turso...' -ForegroundColor Yellow
 & node.exe setup-turso.js 2>&1 | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    throw 'Falha ao aplicar schema/importar dados no Turso.'
+}
 
 # Seed inicial se nao importou dados
 if (-not $sourceDb) {
     # Executar seed via libsql tambem
     Write-Host 'Criando dados iniciais...' -ForegroundColor Yellow
-    & node.exe prisma/seed-init.js 2>&1 | Out-Host
+    & node.exe seed-init-turso.js 2>&1 | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Falha ao criar dados iniciais no banco.'
+    }
 }
 
 # Limpar arquivos temporarios
 Remove-Item (Join-Path $deployDir 'setup-turso.js') -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $deployDir 'seed-init-turso.js') -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $deployDir 'schema.sql') -Force -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $deployDir 'import.sql') -Force -ErrorAction SilentlyContinue
 
