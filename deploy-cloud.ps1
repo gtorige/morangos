@@ -39,6 +39,25 @@ function Test-Command($name) {
     return [bool](Get-Command $name -ErrorAction SilentlyContinue)
 }
 
+function Invoke-CmdPassthru($command) {
+    $output = cmd /d /c "$command 2>&1"
+    $exitCode = $LASTEXITCODE
+
+    if ($output) {
+        $output | ForEach-Object { Write-Host $_ }
+    }
+
+    return $exitCode
+}
+
+function Invoke-CmdCapture($command) {
+    $output = cmd /d /c "$command 2>&1"
+    return @{
+        ExitCode = $LASTEXITCODE
+        Output = @($output | ForEach-Object { "$_" })
+    }
+}
+
 function Ensure-DeployRepo($deployDir) {
     $repoUrl = 'https://github.com/gtorige/morangos.git'
     $branch = 'cloud'
@@ -46,7 +65,7 @@ function Ensure-DeployRepo($deployDir) {
     if (-not (Test-Path $deployDir)) {
         Write-Host 'Baixando codigo (branch cloud)...' -ForegroundColor Yellow
         Set-Location ([Environment]::GetFolderPath('Desktop'))
-        & git clone -b $branch $repoUrl $deployDir 2>&1 | Out-Host
+        Invoke-CmdPassthru "git clone -b $branch $repoUrl `"$deployDir`"" | Out-Null
         return
     }
 
@@ -55,7 +74,7 @@ function Ensure-DeployRepo($deployDir) {
         Write-Host "A pasta existente nao e um repositorio Git. Movendo para: $backupDir" -ForegroundColor Yellow
         Move-Item $deployDir $backupDir
         Set-Location ([Environment]::GetFolderPath('Desktop'))
-        & git clone -b $branch $repoUrl $deployDir 2>&1 | Out-Host
+        Invoke-CmdPassthru "git clone -b $branch $repoUrl `"$deployDir`"" | Out-Null
         return
     }
 
@@ -65,7 +84,7 @@ function Ensure-DeployRepo($deployDir) {
         Write-Host "A pasta morangos-cloud tem alteracoes locais. Movendo para: $backupDir" -ForegroundColor Yellow
         Move-Item $deployDir $backupDir
         Set-Location ([Environment]::GetFolderPath('Desktop'))
-        & git clone -b $branch $repoUrl $deployDir 2>&1 | Out-Host
+        Invoke-CmdPassthru "git clone -b $branch $repoUrl `"$deployDir`"" | Out-Null
         return
     }
 
@@ -93,7 +112,7 @@ function Add-VercelEnvWithoutNewline($deployDir, $name, $value) {
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($tempFile, $value, $utf8NoBom)
     try {
-        cmd /c "cd /d `"$deployDir`" && npx vercel env add $name production --force < `"$tempFile`"" 2>&1 | Out-Host
+        Invoke-CmdPassthru "cd /d `"$deployDir`" && npx vercel env add $name production --force < `"$tempFile`"" | Out-Null
     } finally {
         Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
     }
@@ -599,14 +618,15 @@ Show-Step 9 'DEPLOY NA VERCEL'
 Write-Host 'Agora vamos publicar o app na Vercel.' -ForegroundColor White
 Write-Host ''
 Write-Host 'Verificando autenticacao da Vercel CLI...' -ForegroundColor Yellow
-$vercelUser = (& npx.cmd vercel whoami 2>$null)
-if ($LASTEXITCODE -ne 0 -or -not $vercelUser) {
+$vercelWhoami = Invoke-CmdCapture 'npx vercel whoami'
+$vercelUser = ($vercelWhoami.Output | Select-Object -First 1)
+if ($vercelWhoami.ExitCode -ne 0 -or -not $vercelUser) {
     Write-Host 'A Vercel CLI ainda nao esta autenticada.' -ForegroundColor Yellow
     Write-Host 'O terminal vai pedir para voce fazer login.' -ForegroundColor White
     Write-Host 'Use sua conta GitHub para entrar (mais facil).' -ForegroundColor Yellow
     Write-Host ''
     Pause-Continue
-    & npx.cmd vercel login 2>&1 | Out-Host
+    Invoke-CmdPassthru 'npx vercel login' | Out-Null
 } else {
     Write-Host "Ja autenticado como $vercelUser" -ForegroundColor Green
 }
@@ -614,8 +634,8 @@ if ($LASTEXITCODE -ne 0 -or -not $vercelUser) {
 Write-Host ''
 Write-Host 'Iniciando deploy...' -ForegroundColor Yellow
 Write-Host 'Tentando linkar o projeto automaticamente...' -ForegroundColor Yellow
-& npx.cmd vercel link --yes --project morangos 2>&1 | Out-Host
-if ($LASTEXITCODE -ne 0) {
+$linkExitCode = Invoke-CmdPassthru 'npx vercel link --yes --project morangos'
+if ($linkExitCode -ne 0) {
     Write-Host 'Nao foi possivel linkar automaticamente.' -ForegroundColor Yellow
     Write-Host 'A Vercel pode pedir algumas respostas na primeira execucao.' -ForegroundColor DarkGray
     Write-Host ''
@@ -630,8 +650,8 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ''
 Write-Host 'Fazendo deploy inicial...' -ForegroundColor Yellow
-& npx.cmd vercel --prod 2>&1 | Out-Host
-$initialDeployOk = ($LASTEXITCODE -eq 0)
+$initialDeployExitCode = Invoke-CmdPassthru 'npx vercel --prod'
+$initialDeployOk = ($initialDeployExitCode -eq 0)
 
 Write-Host ''
 Write-Host 'Adicionando variaveis de ambiente...' -ForegroundColor Yellow
@@ -645,8 +665,8 @@ Add-VercelEnvWithoutNewline $deployDir 'DATABASE_URL' 'file:./dev.db'
 
 Write-Host ''
 Write-Host 'Redeployando com as variaveis...' -ForegroundColor Yellow
-& npx.cmd vercel --prod --yes 2>&1 | Out-Host
-$finalDeployOk = ($LASTEXITCODE -eq 0)
+$finalDeployExitCode = Invoke-CmdPassthru 'npx vercel --prod --yes'
+$finalDeployOk = ($finalDeployExitCode -eq 0)
 
 # ============================================================
 # PASSO 10 - GOOGLE MAPS (OPCIONAL)
@@ -681,8 +701,8 @@ if ($configurarMaps -eq 'S' -or $configurarMaps -eq 's') {
     Add-VercelEnvWithoutNewline $deployDir 'GOOGLE_ROUTES_API_KEY' $apiKey.Trim()
     Write-Host 'API key configurada!' -ForegroundColor Green
     Write-Host 'Redeployando...' -ForegroundColor Yellow
-    & npx.cmd vercel --prod --yes 2>&1 | Out-Host
-    $finalDeployOk = ($LASTEXITCODE -eq 0)
+    $mapsDeployExitCode = Invoke-CmdPassthru 'npx vercel --prod --yes'
+    $finalDeployOk = ($mapsDeployExitCode -eq 0)
 }
 
 # ============================================================
