@@ -26,12 +26,19 @@ model Cliente {
 }
 
 model Produto {
-  id               Int          @id @default(autoincrement())
-  nome             String
-  preco            Float
-  promocoes        Promocao[]
-  itens            PedidoItem[]
-  itensRecorrentes PedidoRecorrenteItem[]
+  id                 Int          @id @default(autoincrement())
+  nome               String
+  preco              Float
+  tipoEstoque        String       @default("diario") @map("tipo_estoque")
+  pesoUnitarioGramas Float?       @map("peso_unitario_gramas")
+  estoqueMinimo      Int          @default(0) @map("estoque_minimo")
+  estoqueAtual       Int          @default(0) @map("estoque_atual")
+  unidadeVenda       String       @default("bandeja") @map("unidade_venda")
+  promocoes          Promocao[]
+  itens              PedidoItem[]
+  itensRecorrentes   PedidoRecorrenteItem[]
+  colheitas          Colheita[]
+  movimentacoes      MovimentacaoEstoque[]
 
   @@map("produtos")
 }
@@ -220,4 +227,41 @@ model MensagemWhatsApp {
   texto String
 
   @@map("mensagens_whatsapp")
+}
+
+model Colheita {
+  id         Int     @id @default(autoincrement())
+  produtoId  Int     @map("produto_id")
+  produto    Produto @relation(fields: [produtoId], references: [id])
+  quantidade Float
+  data       String
+  observacao String?
+  criadoEm   String  @default("") @map("criado_em")
+
+  @@index([produtoId])
+  @@index([data])
+  @@index([produtoId, data])
+  @@map("colheitas")
+}
+
+model MovimentacaoEstoque {
+  id           Int     @id @default(autoincrement())
+  produtoId    Int     @map("produto_id")
+  produto      Produto @relation(fields: [produtoId], references: [id])
+  tipo         String
+  quantidade   Float
+  unidade      String  @default("un")
+  lote         String?
+  saldoInicial Float   @default(0) @map("saldo_inicial")
+  saldoFinal   Float   @default(0) @map("saldo_final")
+  motivo       String?
+  referencia   String?
+  data         String
+  criadoEm     String  @default("") @map("criado_em")
+
+  @@index([produtoId])
+  @@index([data])
+  @@index([tipo])
+  @@index([lote])
+  @@map("movimentacoes_estoque")
 }

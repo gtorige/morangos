@@ -31,6 +31,7 @@ import {
   MessageCircle,
 } from "lucide-react";
 import { formatCurrency as fmt, todayStr as todayString } from "@/lib/formatting";
+import { FluxoBanner } from "@/components/fluxo-banner";
 
 interface Cliente {
   id: number;
@@ -41,6 +42,7 @@ interface Cliente {
   bairro: string;
   cidade: string;
   enderecoAlternativo?: string;
+  observacoes?: string;
 }
 
 interface PedidoItem {
@@ -58,6 +60,8 @@ interface Pedido {
   valorPago: number;
   statusEntrega: string;
   situacaoPagamento: string;
+  observacoes: string;
+  ordemRota: number | null;
   cliente: Cliente;
   itens: PedidoItem[];
 }
@@ -267,10 +271,56 @@ export default function RotaPage() {
     try {
       setLoading(true);
       const res = await fetch(`/api/rota?data=${data}`);
-      const json = await res.json();
+      const json: Pedido[] = await res.json();
       setPedidos(json);
-      // Rebuild list preserving paradas at end (clear optimized order on date change)
-      setListaOrdenada(buildListaOrdenada(json, paradas));
+
+      // Preserve optimized order: try localStorage first, then in-place update
+      setListaOrdenada((prev) => {
+        // If fresh mount (prev empty), try to restore from localStorage
+        let source = prev;
+        if (source.length === 0) {
+          try {
+            const raw = localStorage.getItem(ROTA_STORAGE_KEY);
+            if (raw) source = JSON.parse(raw) as ListItem[];
+          } catch {}
+        }
+
+        // If still empty, sort by ordemRota from DB then append paradas
+        if (source.length === 0) {
+          const sorted = [...json].sort((a, b) => {
+            if (a.ordemRota != null && b.ordemRota != null) return a.ordemRota - b.ordemRota;
+            if (a.ordemRota != null) return -1;
+            if (b.ordemRota != null) return 1;
+            return a.id - b.id;
+          });
+          return buildListaOrdenada(sorted, paradas);
+        }
+
+        // Merge: update pedido data in-place while keeping saved order
+        const pedidoMap = new Map(json.map((p) => [p.id, p]));
+        const updated = source
+          .map((item) => {
+            if (item.type === "parada") return item;
+            const fresh = pedidoMap.get(item.data.id);
+            return fresh ? { type: "pedido" as const, data: fresh } : null;
+          })
+          .filter(Boolean) as ListItem[];
+
+        // Add any new pedidos (not in saved list) at the end
+        const existingIds = new Set(updated.filter(i => i.type === "pedido").map(i => (i.data as Pedido).id));
+        const newPedidos = json.filter((p) => !existingIds.has(p.id));
+        for (const p of newPedidos) {
+          updated.push({ type: "pedido", data: p });
+        }
+
+        // Restore paradas from saved list
+        const savedParadas = source.filter(i => i.type === "parada").map(i => i.data as Parada);
+        if (savedParadas.length > 0 && paradas.length === 0) {
+          setParadas(savedParadas);
+        }
+
+        return updated;
+      });
     } catch (error) {
       console.error("Erro ao buscar rota:", error);
     } finally {
@@ -361,7 +411,7 @@ export default function RotaPage() {
         .filter(Boolean) as ListItem[];
 
       setListaOrdenada(novaLista);
-      saveListaToStorage(novaLista);
+      saveRotaOrder(novaLista);
 
       // Update pedidos order too (for compatibility with actions)
       const reorderedPedidos = (optimizedOrder as number[])
@@ -473,11 +523,28 @@ export default function RotaPage() {
     window.open(url, "_blank");
   }
 
+  function saveRotaOrder(lista: ListItem[]) {
+    saveListaToStorage(lista);
+    // Persist ordemRota to DB for each pedido
+    let ordem = 1;
+    lista.forEach((item) => {
+      if (item.type === "pedido") {
+        fetch(`/api/pedidos/${item.data.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ordemRota: ordem }),
+        }).catch(() => {});
+        ordem++;
+      }
+    });
+  }
+
   function moveUp(index: number) {
     if (index === 0) return;
     const updated = [...listaOrdenada];
     [updated[index - 1], updated[index]] = [updated[index], updated[index - 1]];
     setListaOrdenada(updated);
+    saveRotaOrder(updated);
     setRotaInfo(null);
   }
 
@@ -486,6 +553,7 @@ export default function RotaPage() {
     const updated = [...listaOrdenada];
     [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
     setListaOrdenada(updated);
+    saveRotaOrder(updated);
     setRotaInfo(null);
   }
 
@@ -493,6 +561,7 @@ export default function RotaPage() {
 
   return (
     <div className="space-y-5 max-w-3xl">
+      <FluxoBanner stepAtual="rota" />
       <div className="flex items-center gap-2">
         <Truck className="size-5" />
         <h1 className="text-2xl font-semibold tracking-tight">Rota de Entrega</h1>
@@ -696,6 +765,12 @@ export default function RotaPage() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm leading-tight truncate">{item.data.cliente.nome}</p>
                       <p className="text-xs text-muted-foreground truncate">{buildDisplayAddress(item.data.cliente)}</p>
+                      {item.data.observacoes && (
+                        <p className="text-xs text-yellow-500 italic mt-0.5">Obs: {item.data.observacoes}</p>
+                      )}
+                      {item.data.cliente.observacoes && (
+                        <p className="text-xs text-muted-foreground italic mt-0.5">Cliente: {item.data.cliente.observacoes}</p>
+                      )}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <span className="text-sm font-bold">{fmt(item.data.total)}</span>

@@ -17,6 +17,7 @@ import {
   MessageCircle,
 } from "lucide-react";
 import { formatCurrency as fmt, todayStr as todayString } from "@/lib/formatting";
+import { FluxoBanner } from "@/components/fluxo-banner";
 
 const ROTA_STORAGE_KEY = "rota-lista";
 
@@ -29,6 +30,7 @@ interface Cliente {
   bairro: string;
   cidade: string;
   enderecoAlternativo?: string;
+  observacoes?: string;
 }
 
 interface PedidoItem {
@@ -46,6 +48,7 @@ interface Pedido {
   valorPago: number;
   statusEntrega: string;
   situacaoPagamento: string;
+  observacoes: string;
   ordemRota: number | null;
   cliente: Cliente;
   itens: PedidoItem[];
@@ -173,6 +176,10 @@ export default function EntregaPage() {
     await fetchPedidos();
   }
 
+  function saveListaToStorage(l: ListItem[]) {
+    try { localStorage.setItem(ROTA_STORAGE_KEY, JSON.stringify(l)); } catch {}
+  }
+
   async function marcarEntregue(pedido: Pedido) {
     try {
       setActionLoading(pedido.id);
@@ -180,6 +187,16 @@ export default function EntregaPage() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ statusEntrega: "Entregue" }),
+      });
+      // Update local list immediately for responsive UI
+      setLista(prev => {
+        const updated = prev.map(item =>
+          item.type === "pedido" && item.data.id === pedido.id
+            ? { ...item, data: { ...item.data, statusEntrega: "Entregue" } }
+            : item
+        );
+        saveListaToStorage(updated);
+        return updated;
       });
       await fetchPedidos();
     } catch (error) {
@@ -244,6 +261,10 @@ export default function EntregaPage() {
 
   return (
     <div className="min-h-screen bg-background pb-24">
+      {/* Flow Banner */}
+      <div className="px-4 pt-3">
+        <FluxoBanner stepAtual="entrega" />
+      </div>
       {/* Header */}
       <div className="sticky top-0 z-40 bg-background border-b px-4 py-3 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => router.push("/rota")}>
@@ -275,8 +296,14 @@ export default function EntregaPage() {
             <p className="text-sm mt-1">Todas as entregas do dia foram concluidas!</p>
           </div>
         ) : (
-          lista.map((item, index) =>
-            item.type === "parada" ? (
+          [...lista].sort((a, b) => {
+            // Entregues go to the end
+            const aEntregue = a.type === "pedido" && a.data.statusEntrega === "Entregue" ? 1 : 0;
+            const bEntregue = b.type === "pedido" && b.data.statusEntrega === "Entregue" ? 1 : 0;
+            return aEntregue - bEntregue;
+          }).map((item, index) => {
+            const isEntregue = item.type === "pedido" && item.data.statusEntrega === "Entregue";
+            return item.type === "parada" ? (
               /* Parada */
               <div
                 key={`parada-${item.data.id}`}
@@ -297,27 +324,41 @@ export default function EntregaPage() {
               /* Pedido */
               <Card
                 key={`pedido-${item.data.id}`}
-                className="cursor-pointer"
+                className={`cursor-pointer ${isEntregue ? "opacity-40" : ""}`}
                 onClick={() => setExpandedId(expandedId === item.data.id ? null : item.data.id)}
               >
                 <CardContent className="py-3 px-4 space-y-0">
                   {/* Header row */}
                   <div className="flex items-center gap-3">
-                    <span className="flex items-center justify-center size-8 rounded-full bg-primary text-primary-foreground text-sm font-bold shrink-0">
-                      {index + 1}
-                    </span>
+                    {isEntregue ? (
+                      <span className="flex items-center justify-center size-8 rounded-full bg-green-600 text-white text-sm font-bold shrink-0">✓</span>
+                    ) : (
+                      <span className="flex items-center justify-center size-8 rounded-full bg-primary text-primary-foreground text-sm font-bold shrink-0">
+                        {index + 1}
+                      </span>
+                    )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-base font-bold truncate">{item.data.cliente.nome}</p>
+                      <p className={`text-base font-bold truncate ${isEntregue ? "line-through text-muted-foreground" : ""}`}>{item.data.cliente.nome}</p>
                       <p className="text-xs text-muted-foreground flex items-center gap-1">
                         <MapPin className="size-3 shrink-0" />
                         <span className="truncate">{buildDisplayAddress(item.data.cliente)}</span>
                       </p>
+                      {item.data.observacoes && (
+                        <p className="text-xs text-yellow-500 italic mt-0.5">Obs: {item.data.observacoes}</p>
+                      )}
+                      {item.data.cliente.observacoes && (
+                        <p className="text-xs text-muted-foreground italic mt-0.5">Cliente: {item.data.cliente.observacoes}</p>
+                      )}
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="text-base font-bold">{fmt(item.data.total)}</p>
-                      <Badge variant={item.data.situacaoPagamento === "Pago" ? "default" : "outline"} className="text-xs">
-                        {item.data.situacaoPagamento}
-                      </Badge>
+                      {isEntregue ? (
+                        <Badge className="text-xs bg-green-600 text-white">Entregue</Badge>
+                      ) : (
+                        <Badge variant={item.data.situacaoPagamento === "Pago" ? "default" : "outline"} className="text-xs">
+                          {item.data.situacaoPagamento}
+                        </Badge>
+                      )}
                     </div>
                   </div>
 
@@ -397,8 +438,8 @@ export default function EntregaPage() {
                   )}
                 </CardContent>
               </Card>
-            )
-          )
+            );
+          })
         )}
       </div>
 

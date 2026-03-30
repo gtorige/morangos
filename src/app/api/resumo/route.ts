@@ -64,9 +64,13 @@ export async function GET(request: NextRequest) {
     // --- Filter: only delivered orders count as revenue ---
     const entregues = pedidos.filter((p) => p.statusEntrega === "Entregue");
     const entreguesAnterior = pedidosAnterior.filter((p) => p.statusEntrega === "Entregue");
+    const pedidosPendentesEntrega = pedidos.filter(
+      (p) => p.statusEntrega !== "Entregue" && p.statusEntrega !== "Cancelado"
+    );
+    const pedidosAtivos = pedidos.filter((p) => p.statusEntrega !== "Cancelado");
 
     // --- KPIs current (revenue from delivered only) ---
-    const totalPedidos = pedidos.length;
+    const totalPedidos = entregues.length;
     const totalEntregues = entregues.length;
     const totalVendido = entregues.reduce((acc, p) => acc + p.total, 0);
     const totalRecebido = entregues.filter((p) => p.situacaoPagamento === "Pago").reduce((acc, p) => acc + p.total, 0);
@@ -77,12 +81,19 @@ export async function GET(request: NextRequest) {
     );
     const ticketMedio = totalEntregues > 0 ? totalVendido / totalEntregues : 0;
 
+    // --- Projected KPIs (entregues + pendentes de entrega) ---
+    const totalPedidosProjetado = pedidosAtivos.length;
+    const totalAEntregarValor = pedidosPendentesEntrega.reduce((acc, p) => acc + p.total, 0);
+    const totalVendasProjetado = totalVendido + totalAEntregarValor;
+    const totalACobrar = entregues.filter((p) => p.situacaoPagamento !== "Pago").reduce((acc, p) => acc + p.total, 0);
+    const ticketMedioProjetado = totalPedidosProjetado > 0 ? totalVendasProjetado / totalPedidosProjetado : 0;
+
     // --- KPIs previous (revenue from delivered only) ---
     const totalVendidoAnterior = entreguesAnterior.reduce(
       (acc, p) => acc + p.total,
       0
     );
-    const totalPedidosAnterior = pedidosAnterior.length;
+    const totalPedidosAnterior = entreguesAnterior.length;
     const totalEntreguesAnterior = entreguesAnterior.length;
     const totalRecebidoAnterior = entreguesAnterior.filter((p) => p.situacaoPagamento === "Pago").reduce((acc, p) => acc + p.total, 0);
     const ticketMedioAnterior =
@@ -114,6 +125,27 @@ export async function GET(request: NextRequest) {
       (a, b) => b.total - a.total
     );
 
+    // --- Sales by product projected (entregues + pendentes) ---
+    const produtoMapProj = new Map<number, { produto: string; quantidade: number; total: number }>();
+    for (const pedido of [...entregues, ...pedidosPendentesEntrega]) {
+      for (const item of pedido.itens) {
+        const existing = produtoMapProj.get(item.produtoId);
+        if (existing) {
+          existing.quantidade += item.quantidade;
+          existing.total += item.subtotal;
+        } else {
+          produtoMapProj.set(item.produtoId, {
+            produto: item.produto.nome,
+            quantidade: item.quantidade,
+            total: item.subtotal,
+          });
+        }
+      }
+    }
+    const vendasPorProdutoProjetado = Array.from(produtoMapProj.values()).sort(
+      (a, b) => b.total - a.total
+    );
+
     // --- Top clients (delivered only) ---
     const clienteMap = new Map<
       number,
@@ -139,6 +171,28 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.total - a.total)
       .slice(0, 10);
 
+    // --- Top clients projected (entregues + pendentes) ---
+    const clienteMapProj = new Map<number, { cliente: string; bairro: string; pedidos: number; total: number; ticketMedio: number }>();
+    for (const pedido of [...entregues, ...pedidosPendentesEntrega]) {
+      const existing = clienteMapProj.get(pedido.clienteId);
+      if (existing) {
+        existing.pedidos += 1;
+        existing.total += pedido.total;
+        existing.ticketMedio = existing.total / existing.pedidos;
+      } else {
+        clienteMapProj.set(pedido.clienteId, {
+          cliente: pedido.cliente.nome,
+          bairro: pedido.cliente.bairro || "",
+          pedidos: 1,
+          total: pedido.total,
+          ticketMedio: pedido.total,
+        });
+      }
+    }
+    const topClientesProjetado = Array.from(clienteMapProj.values())
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10);
+
     // --- Sales by bairro (delivered only) ---
     const bairroMap = new Map<
       string,
@@ -158,6 +212,22 @@ export async function GET(request: NextRequest) {
       (a, b) => b.total - a.total
     );
 
+    // --- Sales by bairro projected (entregues + pendentes) ---
+    const bairroMapProj = new Map<string, { bairro: string; pedidos: number; total: number }>();
+    for (const pedido of [...entregues, ...pedidosPendentesEntrega]) {
+      const bairro = pedido.cliente.bairro || "Sem bairro";
+      const existing = bairroMapProj.get(bairro);
+      if (existing) {
+        existing.pedidos += 1;
+        existing.total += pedido.total;
+      } else {
+        bairroMapProj.set(bairro, { bairro, pedidos: 1, total: pedido.total });
+      }
+    }
+    const vendasPorBairroProjetado = Array.from(bairroMapProj.values()).sort(
+      (a, b) => b.total - a.total
+    );
+
     // --- Payment method breakdown (delivered only) ---
     const pagamentoMap = new Map<string, { forma: string; pedidos: number; total: number }>();
     for (const pedido of entregues) {
@@ -171,6 +241,22 @@ export async function GET(request: NextRequest) {
       }
     }
     const vendasPorPagamento = Array.from(pagamentoMap.values()).sort(
+      (a, b) => b.total - a.total
+    );
+
+    // --- Payment method breakdown projected (entregues + pendentes de entrega) ---
+    const pagamentoMapProj = new Map<string, { forma: string; pedidos: number; total: number }>();
+    for (const pedido of [...entregues, ...pedidosPendentesEntrega]) {
+      const forma = pedido.formaPagamento?.nome || "Não informado";
+      const existing = pagamentoMapProj.get(forma);
+      if (existing) {
+        existing.pedidos += 1;
+        existing.total += pedido.total;
+      } else {
+        pagamentoMapProj.set(forma, { forma, pedidos: 1, total: pedido.total });
+      }
+    }
+    const vendasPorPagamentoProjetado = Array.from(pagamentoMapProj.values()).sort(
       (a, b) => b.total - a.total
     );
 
@@ -231,9 +317,9 @@ export async function GET(request: NextRequest) {
         vendasPorMes.push({ mes: m, mesNome: mesesNomes[m], ...vals });
       }
 
-      // All orders per month (including pending - "projetado")
+      // All active orders per month (excluding cancelled - "projetado")
       const mesMapTodos = new Map<number, { total: number; pedidos: number }>();
-      for (const pedido of pedidos) {
+      for (const pedido of pedidosAtivos) {
         const month = parseInt(pedido.dataEntrega.split("-")[1]) - 1;
         const existing = mesMapTodos.get(month);
         if (existing) {
@@ -272,24 +358,40 @@ export async function GET(request: NextRequest) {
       where: {
         vencimento: { gte: dataInicio, lte: dataFim },
       },
+      include: { subcategoriaRef: true },
     });
     const contasPagas = contasNoPeriodo.filter((c) => c.situacao === "Pago");
     const contasPendentes = contasNoPeriodo.filter((c) => c.situacao === "Pendente");
     const contasVencidas = contasPendentes.filter((c) => c.vencimento <= hoje);
 
     const despesasRealizadas = contasPagas.reduce((a, c) => a + c.valor, 0);
-    const despesasProjetadas = contasPendentes.reduce((a, c) => a + c.valor, 0);
+    const contasPendentesNaoVencidas = contasPendentes.filter((c) => c.vencimento > hoje);
+    const despesasProjetadas = contasPendentesNaoVencidas.reduce((a, c) => a + c.valor, 0);
     const despesasVencidas = contasVencidas.reduce((a, c) => a + c.valor, 0);
 
-    // --- Category breakdown ---
-    const categoriaMap = new Map<string, { realizado: number; projetado: number }>();
+    // --- Category breakdown (with subcategories) ---
+    const categoriaMap = new Map<string, { realizado: number; projetado: number; vencido: number; subcategorias: Map<string, { realizado: number; projetado: number; vencido: number }> }>();
     for (const conta of contasNoPeriodo) {
       const cat = conta.categoria || "Sem categoria";
-      const existing = categoriaMap.get(cat) || { realizado: 0, projetado: 0 };
+      const subNome = conta.subcategoriaRef?.nome || "";
+      const existing = categoriaMap.get(cat) || { realizado: 0, projetado: 0, vencido: 0, subcategorias: new Map() };
       if (conta.situacao === "Pago") {
         existing.realizado += conta.valor;
+      } else if (conta.vencimento <= hoje) {
+        existing.vencido += conta.valor;
       } else {
         existing.projetado += conta.valor;
+      }
+      if (subNome) {
+        const subExisting = existing.subcategorias.get(subNome) || { realizado: 0, projetado: 0, vencido: 0 };
+        if (conta.situacao === "Pago") {
+          subExisting.realizado += conta.valor;
+        } else if (conta.vencimento <= hoje) {
+          subExisting.vencido += conta.valor;
+        } else {
+          subExisting.projetado += conta.valor;
+        }
+        existing.subcategorias.set(subNome, subExisting);
       }
       categoriaMap.set(cat, existing);
     }
@@ -298,8 +400,12 @@ export async function GET(request: NextRequest) {
         categoria,
         realizado: vals.realizado,
         projetado: vals.projetado,
+        vencido: vals.vencido,
+        subcategorias: Array.from(vals.subcategorias.entries())
+          .map(([nome, sub]) => ({ nome, realizado: sub.realizado, projetado: sub.projetado, vencido: sub.vencido }))
+          .sort((a, b) => (b.realizado + b.projetado + b.vencido) - (a.realizado + a.projetado + a.vencido)),
       }))
-      .sort((a, b) => (b.realizado + b.projetado) - (a.realizado + a.projetado));
+      .sort((a, b) => (b.realizado + b.projetado + b.vencido) - (a.realizado + a.projetado + a.vencido));
 
     // --- Despesas por mês (only in "ano" period) ---
     const despesasPorMes: { mes: number; mesNome: string; pagas: number; pendentes: number }[] = [];
@@ -318,22 +424,60 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // --- Inadimplência GLOBAL (sem filtro de período) ---
+    // Busca todos os pedidos entregues, não pagos, com data de entrega passada
+    const pedidosInadimplentes = await prisma.pedido.findMany({
+      where: {
+        statusEntrega: "Entregue",
+        situacaoPagamento: { not: "Pago" },
+        dataEntrega: { lt: hoje },
+      },
+      include: { cliente: true },
+    });
+    const inadimplentesGlobal = pedidosInadimplentes
+      .map((p) => {
+        const diffMs = new Date(hoje + "T12:00:00").getTime() - new Date(p.dataEntrega + "T12:00:00").getTime();
+        const diasAtraso = Math.round(diffMs / 86400000);
+        return {
+          pedidoId: p.id,
+          clienteId: p.clienteId,
+          cliente: p.cliente.nome,
+          bairro: p.cliente.bairro || "",
+          valor: p.total,
+          dataEntrega: p.dataEntrega,
+          diasAtraso,
+        };
+      })
+      .sort((a, b) => b.diasAtraso - a.diasAtraso);
+    const totalInadimplente = inadimplentesGlobal.reduce((a, p) => a + p.valor, 0);
+
     const financeiro = {
       receita: totalVendido,
       recebido: totalRecebido,
       aReceber: totalPendente,
-      despesas: despesasRealizadas + despesasProjetadas,
+      despesas: despesasRealizadas + despesasProjetadas + despesasVencidas,
       despesasPagas: despesasRealizadas,
       despesasPendentes: despesasProjetadas,
       despesasVencidas,
       despesasRealizadas,
       despesasProjetadas,
-      lucroEstimado: totalVendido - (despesasRealizadas + despesasProjetadas),
+      lucroEstimado: totalVendido - (despesasRealizadas + despesasProjetadas + despesasVencidas),
       fluxoCaixa: totalRecebido - despesasRealizadas,
-      contasPendentesQtd: contasPendentes.length,
+      receitaProjetada: totalVendasProjetado,
+      aEntregarValor: totalAEntregarValor,
+      aCobrar: totalACobrar,
+      fluxoCaixaProjetado: totalVendasProjetado - (despesasRealizadas + despesasProjetadas + despesasVencidas),
+      lucroEstimadoProjetado: totalVendasProjetado - (despesasRealizadas + despesasProjetadas + despesasVencidas),
+      contasPendentesQtd: contasPendentesNaoVencidas.length,
       contasVencidasQtd: contasVencidas.length,
       despesasPorCategoria,
       despesasPorMes,
+    };
+
+    const inadimplencia = {
+      total: totalInadimplente,
+      quantidade: inadimplentesGlobal.length,
+      clientes: inadimplentesGlobal,
     };
 
     // --- Variações ---
@@ -365,6 +509,11 @@ export async function GET(request: NextRequest) {
       totalPendente,
       totalTaxaEntrega,
       ticketMedio,
+      totalPedidosProjetado,
+      totalVendasProjetado,
+      totalAEntregarValor,
+      totalACobrar,
+      ticketMedioProjetado,
       comparativo: {
         dataInicioAnterior,
         dataFimAnterior,
@@ -378,15 +527,20 @@ export async function GET(request: NextRequest) {
         variacaoTicketMedio,
       },
       vendasPorProduto,
+      vendasPorProdutoProjetado,
       topClientes,
+      topClientesProjetado,
       vendasPorBairro,
+      vendasPorBairroProjetado,
       vendasPorPagamento,
+      vendasPorPagamentoProjetado,
       statusEntregas: statusMap,
       vendasPorDia,
       vendasPorMes,
       vendasPorMesAnterior,
       vendasPorMesTodos,
       financeiro,
+      inadimplencia,
     });
   } catch (error) {
     console.error("Erro ao buscar resumo:", error);

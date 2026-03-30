@@ -35,9 +35,17 @@ export const clienteUpdateSchema = clienteCreateSchema.partial();
 
 // ─── Produto ────────────────────────────────────────────────────────────
 
+export const tipoEstoque = z.enum(["diario", "estoque"]);
+export const unidadeVenda = z.enum(["bandeja", "kg", "caixa", "unidade"]);
+
 export const produtoCreateSchema = z.object({
   nome: reqStr(200),
   preco: posFloat(),
+  tipoEstoque: tipoEstoque.optional().default("diario"),
+  pesoUnitarioGramas: z.number().min(0).optional().nullable(),
+  estoqueMinimo: z.number().int().min(0).optional().default(0),
+  estoqueAtual: z.number().int().min(0).optional().default(0),
+  unidadeVenda: unidadeVenda.optional().default("bandeja"),
 });
 
 export const produtoUpdateSchema = produtoCreateSchema.partial();
@@ -195,6 +203,42 @@ export const configuracaoSchema = z.object({
   valor: reqStr(2000),
 });
 
+// ─── Colheita ──────────────────────────────────────────────────────────
+
+export const colheitaCreateSchema = z.object({
+  produtoId: posInt(),
+  quantidade: z.number().min(0),
+  data: dateStr().optional(),
+  observacao: str(500).optional().nullable(),
+});
+
+// ─── Movimentação de Estoque ───────────────────────────────────────────
+
+export const tipoMovimentacao = z.enum([
+  "colheita", "entrada", "pedido", "congelamento", "consumo", "descarte", "ajuste",
+]);
+
+export const movimentacaoCreateSchema = z.object({
+  produtoId: posInt(),
+  tipo: tipoMovimentacao,
+  quantidade: z.number(),
+  unidade: z.enum(["un", "kg"]).optional().default("un"),
+  lote: str(50).optional().nullable(),
+  motivo: str(500).optional().nullable(),
+  referencia: str(100).optional().nullable(),
+  data: dateStr().optional(),
+});
+
+// ─── Congelamento ──────────────────────────────────────────────────────
+
+export const congelamentoCreateSchema = z.object({
+  produtoFrescoId: posInt(),
+  produtoCongeladoId: posInt(),
+  quantidadeKg: z.number().positive(),
+  data: dateStr().optional(),
+  observacao: str(500).optional().nullable(),
+});
+
 // ─── Helpers ────────────────────────────────────────────────────────────
 
 export { idParam };
@@ -209,3 +253,6 @@ export type ContaCreate = z.infer<typeof contaCreateSchema>;
 export type PromocaoCreate = z.infer<typeof promocaoCreateSchema>;
 export type RecorrenteCreate = z.infer<typeof recorrenteCreateSchema>;
 export type RecorrenteItemInput = z.infer<typeof recorrenteItemInput>;
+export type ColheitaCreate = z.infer<typeof colheitaCreateSchema>;
+export type MovimentacaoCreate = z.infer<typeof movimentacaoCreateSchema>;
+export type CongelamentoCreate = z.infer<typeof congelamentoCreateSchema>;
