@@ -4,6 +4,7 @@
 # ============================================================
 
 $ErrorActionPreference = 'Continue'
+$PSNativeCommandUseErrorActionPreference = $false
 
 function Show-Step($num, $title) {
     Write-Host ''
@@ -24,8 +25,76 @@ function Refresh-Path {
     $env:Path = $m + ';' + $u
 }
 
+function Add-ToSessionPath($pathToAdd) {
+    if (-not $pathToAdd) { return }
+    if (-not (Test-Path $pathToAdd)) { return }
+
+    $currentParts = ($env:Path -split ';') | Where-Object { $_ }
+    if ($currentParts -contains $pathToAdd) { return }
+
+    $env:Path = $pathToAdd + ';' + $env:Path
+}
+
 function Test-Command($name) {
     return [bool](Get-Command $name -ErrorAction SilentlyContinue)
+}
+
+function Ensure-DeployRepo($deployDir) {
+    $repoUrl = 'https://github.com/gtorige/morangos.git'
+    $branch = 'cloud'
+
+    if (-not (Test-Path $deployDir)) {
+        Write-Host 'Baixando codigo (branch cloud)...' -ForegroundColor Yellow
+        Set-Location ([Environment]::GetFolderPath('Desktop'))
+        & git clone -b $branch $repoUrl $deployDir 2>&1 | Out-Host
+        return
+    }
+
+    if (-not (Test-Path (Join-Path $deployDir '.git'))) {
+        $backupDir = "$deployDir-backup-" + (Get-Date -Format 'yyyyMMdd-HHmmss')
+        Write-Host "A pasta existente nao e um repositorio Git. Movendo para: $backupDir" -ForegroundColor Yellow
+        Move-Item $deployDir $backupDir
+        Set-Location ([Environment]::GetFolderPath('Desktop'))
+        & git clone -b $branch $repoUrl $deployDir 2>&1 | Out-Host
+        return
+    }
+
+    $repoStatus = & git -C $deployDir status --porcelain 2>$null
+    if ($repoStatus) {
+        $backupDir = "$deployDir-backup-" + (Get-Date -Format 'yyyyMMdd-HHmmss')
+        Write-Host "A pasta morangos-cloud tem alteracoes locais. Movendo para: $backupDir" -ForegroundColor Yellow
+        Move-Item $deployDir $backupDir
+        Set-Location ([Environment]::GetFolderPath('Desktop'))
+        & git clone -b $branch $repoUrl $deployDir 2>&1 | Out-Host
+        return
+    }
+
+    Write-Host 'Atualizando repositorio cloud...' -ForegroundColor Yellow
+    & git -C $deployDir fetch origin $branch 2>&1 | Out-Host
+    & git -C $deployDir checkout $branch 2>&1 | Out-Host
+    & git -C $deployDir reset --hard "origin/$branch" 2>&1 | Out-Host
+}
+
+function Ensure-CloudBuildConfig($deployDir) {
+    $vercelJsonPath = Join-Path $deployDir 'vercel.json'
+    $vercelJson = @'
+{
+  "framework": "nextjs",
+  "buildCommand": "prisma generate && next build --webpack"
+}
+'@
+    Set-Content -Path $vercelJsonPath -Value $vercelJson -Encoding UTF8 -NoNewline
+    Write-Host 'vercel.json alinhado para build com --webpack.' -ForegroundColor Green
+}
+
+function Add-VercelEnvWithoutNewline($deployDir, $name, $value) {
+    $tempFile = Join-Path $env:TEMP ("vercel-env-" + $name + ".txt")
+    Set-Content -Path $tempFile -Value $value -Encoding UTF8 -NoNewline
+    try {
+        cmd /c "cd /d `"$deployDir`" && npx vercel env add $name production --force < `"$tempFile`"" 2>&1 | Out-Host
+    } finally {
+        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Ensure-VercelCli {
@@ -49,17 +118,94 @@ function Ensure-TursoCli {
     if (Test-Command 'turso') {
         $tursoVersion = & turso --version 2>$null | Select-Object -First 1
         Write-Host "Turso CLI ja instalada ($tursoVersion)" -ForegroundColor Green
-        return
+        return $true
     }
 
-    Write-Host 'Turso CLI nao encontrada. Instalando via script oficial...' -ForegroundColor Yellow
-    & powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://github.com/tursodatabase/turso/releases/latest/download/turso_cli-installer.ps1 | iex"
+    Write-Host 'Turso CLI nao encontrada.' -ForegroundColor Yellow
+    Write-Host 'No Windows, a automacao oficial da Turso CLI pode exigir WSL.' -ForegroundColor DarkGray
+    Write-Host 'Vou tentar instalar mesmo assim; se nao houver comando compatível,' -ForegroundColor DarkGray
+    Write-Host 'o script continua em modo manual para URL e token.' -ForegroundColor DarkGray
+
+    & powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://github.com/tursodatabase/turso/releases/latest/download/turso_cli-installer.ps1 | iex" 2>&1 | Out-Host
     Refresh-Path
-    $tursoVersion = & turso --version 2>$null | Select-Object -First 1
-    if (-not $tursoVersion) {
-        throw 'Falha ao instalar a Turso CLI.'
+    Add-ToSessionPath (Join-Path $env:USERPROFILE '.turso')
+
+    if (Test-Command 'turso') {
+        $tursoVersion = & turso --version 2>$null | Select-Object -First 1
+        if ($tursoVersion) {
+            Write-Host "Turso CLI instalada! ($tursoVersion)" -ForegroundColor Green
+            return $true
+        }
     }
-    Write-Host "Turso CLI instalada! ($tursoVersion)" -ForegroundColor Green
+
+    Write-Host 'Nao foi encontrada uma Turso CLI compativel nesta sessao.' -ForegroundColor Yellow
+    Write-Host 'O deploy vai seguir com a configuracao manual do Turso.' -ForegroundColor Yellow
+    return $false
+}
+
+function Read-TursoCredentialsManually {
+    Write-Host 'Vamos configurar o banco de dados no Turso pelo navegador.' -ForegroundColor White
+    Write-Host 'Siga os passos:' -ForegroundColor White
+    Write-Host ''
+    Write-Host '  1. Entre com GitHub em https://turso.tech/app' -ForegroundColor DarkGray
+    Write-Host '  2. Crie o banco "morangos" se ele ainda nao existir' -ForegroundColor DarkGray
+    Write-Host '  3. Abra o banco e copie a URL libsql://' -ForegroundColor DarkGray
+    Write-Host '  4. Gere um token de acesso e copie' -ForegroundColor DarkGray
+    Write-Host ''
+    Start-Process 'https://turso.tech/app'
+    Pause-Continue
+
+    while ($true) {
+        $manualUrl = Read-Host 'Cole a URL do banco Turso aqui'
+        if ($manualUrl -and $manualUrl.Trim().StartsWith('libsql://')) { break }
+        Write-Host 'URL invalida. Deve comecar com libsql://' -ForegroundColor Red
+    }
+
+    while ($true) {
+        $manualToken = Read-Host 'Cole o token do Turso aqui'
+        if ($manualToken -and $manualToken.Trim().Length -gt 20) { break }
+        Write-Host 'Token invalido. Deve ter mais de 20 caracteres.' -ForegroundColor Red
+    }
+
+    return @{
+        Url = $manualUrl.Trim()
+        Token = $manualToken.Trim()
+    }
+}
+
+function Get-TursoCredentials {
+    $hasTursoCli = Ensure-TursoCli
+    if (-not $hasTursoCli) {
+        return Read-TursoCredentialsManually
+    }
+
+    Write-Host 'Verificando autenticacao da Turso CLI...' -ForegroundColor Yellow
+    & turso auth login 2>&1 | Out-Host
+
+    $dbName = 'morangos'
+    Write-Host ''
+    Write-Host "Verificando banco '$dbName'..." -ForegroundColor Yellow
+    $tursoUrl = (& turso db show $dbName --url 2>$null | Select-Object -First 1)
+    if (-not $tursoUrl) {
+        Write-Host "Banco '$dbName' nao existe. Criando automaticamente..." -ForegroundColor Yellow
+        & turso db create $dbName 2>&1 | Out-Host
+        $tursoUrl = (& turso db show $dbName --url 2>$null | Select-Object -First 1)
+    }
+
+    if (-not $tursoUrl) {
+        throw "Nao foi possivel obter a URL do banco '$dbName'."
+    }
+
+    Write-Host 'Gerando token de acesso do Turso...' -ForegroundColor Yellow
+    $tursoToken = (& turso db tokens create $dbName 2>$null | Select-Object -First 1)
+    if (-not $tursoToken) {
+        throw "Nao foi possivel gerar um token para o banco '$dbName'."
+    }
+
+    return @{
+        Url = $tursoUrl.Trim()
+        Token = $tursoToken.Trim()
+    }
 }
 
 Clear-Host
@@ -114,7 +260,8 @@ try {
 # PASSO 2 - INSTALAR TURSO CLI
 # ============================================================
 Show-Step 2 'INSTALAR TURSO CLI'
-Ensure-TursoCli
+Write-Host 'A Turso sera configurada automaticamente quando a CLI for compativel.' -ForegroundColor White
+Write-Host 'Se nao for, o script muda sozinho para o modo manual.' -ForegroundColor DarkGray
 
 # ============================================================
 # PASSO 3 - INSTALAR VERCEL CLI
@@ -126,33 +273,10 @@ Ensure-VercelCli
 # PASSO 4 - AUTENTICAR E CONFIGURAR TURSO
 # ============================================================
 Show-Step 4 'CONFIGURAR TURSO'
-
-Write-Host 'Verificando autenticacao da Turso CLI...' -ForegroundColor Yellow
-& turso auth login 2>&1 | Out-Host
-
-$dbName = 'morangos'
-Write-Host ''
-Write-Host "Verificando banco '$dbName'..." -ForegroundColor Yellow
-$tursoUrl = (& turso db show $dbName --url 2>$null | Select-Object -First 1)
-if (-not $tursoUrl) {
-    Write-Host "Banco '$dbName' nao existe. Criando automaticamente..." -ForegroundColor Yellow
-    & turso db create $dbName 2>&1 | Out-Host
-    $tursoUrl = (& turso db show $dbName --url 2>$null | Select-Object -First 1)
-}
-
-if (-not $tursoUrl) {
-    throw "Nao foi possivel obter a URL do banco '$dbName'."
-}
-
-$tursoUrl = $tursoUrl.Trim()
+$tursoConfig = Get-TursoCredentials
+$tursoUrl = $tursoConfig.Url
+$tursoToken = $tursoConfig.Token
 Write-Host "Banco pronto: $tursoUrl" -ForegroundColor Green
-
-Write-Host 'Gerando token de acesso do Turso...' -ForegroundColor Yellow
-$tursoToken = (& turso db tokens create $dbName 2>$null | Select-Object -First 1)
-if (-not $tursoToken) {
-    throw "Nao foi possivel gerar um token para o banco '$dbName'."
-}
-$tursoToken = $tursoToken.Trim()
 Write-Host 'Token gerado!' -ForegroundColor Green
 
 # ============================================================
@@ -161,21 +285,9 @@ Write-Host 'Token gerado!' -ForegroundColor Green
 Show-Step 5 'BAIXAR O CODIGO'
 
 $deployDir = Join-Path ([Environment]::GetFolderPath('Desktop')) 'morangos-cloud'
-
-if (Test-Path $deployDir) {
-    Write-Host 'Pasta morangos-cloud ja existe. Atualizando...' -ForegroundColor Yellow
-    Set-Location $deployDir
-    $env:GIT_REDIRECT_STDERR = '2>&1'
-    & git pull origin cloud 2>&1 | Out-Host
-    $env:GIT_REDIRECT_STDERR = $null
-} else {
-    Write-Host 'Baixando codigo (branch cloud)...' -ForegroundColor Yellow
-    Set-Location ([Environment]::GetFolderPath('Desktop'))
-    $env:GIT_REDIRECT_STDERR = '2>&1'
-    & git clone -b cloud 'https://github.com/gtorige/morangos.git' "$deployDir" 2>&1 | Out-Host
-    $env:GIT_REDIRECT_STDERR = $null
-    Set-Location $deployDir
-}
+Ensure-DeployRepo $deployDir
+Set-Location $deployDir
+Ensure-CloudBuildConfig $deployDir
 
 Write-Host 'Codigo baixado!' -ForegroundColor Green
 
@@ -414,20 +526,22 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ''
 Write-Host 'Fazendo deploy inicial...' -ForegroundColor Yellow
 & npx.cmd vercel --prod 2>&1 | Out-Host
+$initialDeployOk = ($LASTEXITCODE -eq 0)
 
 Write-Host ''
 Write-Host 'Adicionando variaveis de ambiente...' -ForegroundColor Yellow
 Write-Host '(Sem prompts extras: o script usa --force)' -ForegroundColor DarkGray
 Write-Host ''
 
-echo $tursoUrl | & npx.cmd vercel env add TURSO_DATABASE_URL production --force 2>&1 | Out-Host
-echo $tursoToken | & npx.cmd vercel env add TURSO_AUTH_TOKEN production --force 2>&1 | Out-Host
-echo $authSecret | & npx.cmd vercel env add AUTH_SECRET production --force 2>&1 | Out-Host
-echo 'file:./dev.db' | & npx.cmd vercel env add DATABASE_URL production --force 2>&1 | Out-Host
+Add-VercelEnvWithoutNewline $deployDir 'TURSO_DATABASE_URL' $tursoUrl
+Add-VercelEnvWithoutNewline $deployDir 'TURSO_AUTH_TOKEN' $tursoToken
+Add-VercelEnvWithoutNewline $deployDir 'AUTH_SECRET' $authSecret
+Add-VercelEnvWithoutNewline $deployDir 'DATABASE_URL' 'file:./dev.db'
 
 Write-Host ''
 Write-Host 'Redeployando com as variaveis...' -ForegroundColor Yellow
 & npx.cmd vercel --prod --yes 2>&1 | Out-Host
+$finalDeployOk = ($LASTEXITCODE -eq 0)
 
 # ============================================================
 # PASSO 10 - GOOGLE MAPS (OPCIONAL)
@@ -459,10 +573,11 @@ if ($configurarMaps -eq 'S' -or $configurarMaps -eq 's') {
         Write-Host 'Chave invalida. Tente novamente.' -ForegroundColor Red
     }
 
-    echo $apiKey.Trim() | & npx.cmd vercel env add GOOGLE_ROUTES_API_KEY production --force 2>&1 | Out-Host
+    Add-VercelEnvWithoutNewline $deployDir 'GOOGLE_ROUTES_API_KEY' $apiKey.Trim()
     Write-Host 'API key configurada!' -ForegroundColor Green
     Write-Host 'Redeployando...' -ForegroundColor Yellow
     & npx.cmd vercel --prod --yes 2>&1 | Out-Host
+    $finalDeployOk = ($LASTEXITCODE -eq 0)
 }
 
 # ============================================================
@@ -475,7 +590,12 @@ Write-Host '  ========================================' -ForegroundColor Green
 Write-Host '  DEPLOY CONCLUIDO!' -ForegroundColor Green
 Write-Host '  ========================================' -ForegroundColor Green
 Write-Host ''
-Write-Host '  Seu app esta online!' -ForegroundColor White
+if ($finalDeployOk) {
+    Write-Host '  Seu app esta online!' -ForegroundColor White
+} else {
+    Write-Host '  O script terminou, mas o deploy final falhou.' -ForegroundColor Yellow
+    Write-Host '  Veja os erros acima no build da Vercel.' -ForegroundColor Yellow
+}
 Write-Host ''
 Write-Host '  Acesse o dashboard da Vercel para ver a URL:' -ForegroundColor White
 Write-Host '  https://vercel.com/dashboard' -ForegroundColor Cyan
