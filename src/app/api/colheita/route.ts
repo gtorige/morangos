@@ -17,36 +17,72 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Colheita só pode ser registrada para produtos do tipo 'diário'." }, { status: 400 });
     }
 
-    // Upsert: se já existe colheita do mesmo produto+data, atualiza
+    // Upsert colheita + criar/atualizar MovimentacaoEstoque em transação
     const existing = await prisma.colheita.findFirst({
       where: { produtoId: body.produtoId, data },
     });
 
-    let colheita;
-    if (body.quantidade <= 0 && existing) {
-      // Quantidade 0 ou negativa = remover colheita
-      await prisma.colheita.delete({ where: { id: existing.id } });
-      colheita = null;
-    } else if (existing) {
-      colheita = await prisma.colheita.update({
-        where: { id: existing.id },
-        data: { quantidade: body.quantidade, observacao: body.observacao ?? existing.observacao },
-        include: { produto: true },
-      });
-    } else if (body.quantidade > 0) {
-      colheita = await prisma.colheita.create({
-        data: {
-          produtoId: body.produtoId,
-          quantidade: body.quantidade,
-          data,
-          observacao: body.observacao,
-          criadoEm: now,
-        },
-        include: { produto: true },
-      });
-    }
+    const result = await prisma.$transaction(async (tx) => {
+      let colheita;
 
-    return NextResponse.json({ colheita, data });
+      // Buscar movimentação de colheita existente para este produto+data
+      const existingMov = await tx.movimentacaoEstoque.findFirst({
+        where: { produtoId: body.produtoId, data, tipo: "colheita" },
+      });
+
+      if (body.quantidade <= 0 && existing) {
+        // Remover colheita + movimentação
+        await tx.colheita.delete({ where: { id: existing.id } });
+        if (existingMov) {
+          await tx.movimentacaoEstoque.delete({ where: { id: existingMov.id } });
+        }
+        colheita = null;
+      } else if (existing) {
+        // Atualizar colheita
+        colheita = await tx.colheita.update({
+          where: { id: existing.id },
+          data: { quantidade: body.quantidade, observacao: body.observacao ?? existing.observacao },
+          include: { produto: true },
+        });
+        // Atualizar movimentação
+        if (existingMov) {
+          await tx.movimentacaoEstoque.update({
+            where: { id: existingMov.id },
+            data: { quantidade: body.quantidade, motivo: body.observacao || "Colheita do dia" },
+          });
+        } else {
+          await tx.movimentacaoEstoque.create({
+            data: {
+              produtoId: body.produtoId, tipo: "colheita", quantidade: body.quantidade,
+              unidade: "kg", saldoInicial: 0, saldoFinal: body.quantidade,
+              motivo: body.observacao || "Colheita do dia",
+              referencia: String(colheita.id), data, criadoEm: now,
+            },
+          });
+        }
+      } else if (body.quantidade > 0) {
+        // Criar colheita + movimentação
+        colheita = await tx.colheita.create({
+          data: {
+            produtoId: body.produtoId, quantidade: body.quantidade,
+            data, observacao: body.observacao, criadoEm: now,
+          },
+          include: { produto: true },
+        });
+        await tx.movimentacaoEstoque.create({
+          data: {
+            produtoId: body.produtoId, tipo: "colheita", quantidade: body.quantidade,
+            unidade: "kg", saldoInicial: 0, saldoFinal: body.quantidade,
+            motivo: body.observacao || "Colheita do dia",
+            referencia: String(colheita.id), data, criadoEm: now,
+          },
+        });
+      }
+
+      return colheita;
+    });
+
+    return NextResponse.json({ colheita: result, data });
   });
 }
 

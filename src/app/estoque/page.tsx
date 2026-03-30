@@ -121,6 +121,8 @@ export default function EstoquePage() {
   const [movimentacoes, setMovimentacoes] = useState<MovimentacaoEstoque[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [filtroTipo, setFiltroTipo] = useState("todos");
+  const [filtroDataDe, setFiltroDataDe] = useState("");
+  const [filtroDataAte, setFiltroDataAte] = useState("");
 
   // Modals
   const [congelarOpen, setCongelarOpen] = useState(false);
@@ -598,7 +600,7 @@ export default function EstoquePage() {
                                 </span>
                               </TableCell>
                               <TableCell className="text-right tabular-nums">
-                                {atual} {item.unidadeVenda}
+                                {atual} un
                               </TableCell>
                               <TableCell className="hidden md:table-cell text-right tabular-nums">
                                 {minimo > 0 ? minimo : "—"}
@@ -659,7 +661,7 @@ export default function EstoquePage() {
       {tab === "movimentacao" && (
         <Card>
           <CardHeader>
-            <CardTitle>Historico de movimentacoes</CardTitle>
+            <CardTitle>Histórico de movimentações</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Filter chips */}
@@ -679,13 +681,34 @@ export default function EstoquePage() {
               ))}
             </div>
 
-            {loading ? (
+            {/* Date filters */}
+            <div className="flex flex-wrap gap-2 items-end">
+              <div className="space-y-1">
+                <Label className="text-xs">De</Label>
+                <Input type="date" value={filtroDataDe} onChange={(e) => setFiltroDataDe(e.target.value)} className="w-36 h-7 text-xs" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Até</Label>
+                <Input type="date" value={filtroDataAte} onChange={(e) => setFiltroDataAte(e.target.value)} className="w-36 h-7 text-xs" />
+              </div>
+              {(filtroDataDe || filtroDataAte) && (
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setFiltroDataDe(""); setFiltroDataAte(""); }}>Limpar datas</Button>
+              )}
+            </div>
+
+            {(() => {
+              const filtered = movimentacoes.filter(m => {
+                if (filtroDataDe && m.data < filtroDataDe) return false;
+                if (filtroDataAte && m.data > filtroDataAte) return false;
+                return true;
+              });
+              return loading ? (
               <TableSkeleton rows={8} cols={8} />
-            ) : movimentacoes.length === 0 ? (
+            ) : filtered.length === 0 ? (
               <EmptyState
                 icon={ArrowRightLeft}
-                title="Nenhuma movimentacao encontrada"
-                description="Registre movimentacoes para acompanhar o historico."
+                title="Nenhuma movimentação encontrada"
+                description="Registre movimentações para acompanhar o histórico."
               />
             ) : (
               <div className="overflow-x-auto -mx-4">
@@ -707,6 +730,9 @@ export default function EstoquePage() {
                       <TableHead className="hidden md:table-cell text-right">
                         Saldo fin.
                       </TableHead>
+                      <TableHead className="hidden sm:table-cell">
+                        Pedido
+                      </TableHead>
                       <TableHead className="hidden lg:table-cell">
                         Observação
                       </TableHead>
@@ -714,7 +740,7 @@ export default function EstoquePage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {movimentacoes.map((mov) => {
+                    {filtered.map((mov) => {
                       const config =
                         TIPO_MOVIMENTACAO_CONFIG[
                           mov.tipo as TipoMovimentacao
@@ -761,11 +787,20 @@ export default function EstoquePage() {
                               isNegative ? "text-red-500" : "text-green-500"
                             }`}
                           >
-                            {isNegative ? "-" : "+"}
-                            {mov.quantidade} {mov.unidade}
+                            {mov.quantidade < 0 ? "" : "+"}{Number(mov.quantidade).toFixed(mov.unidade === "kg" ? 1 : 0)}
+                            <span className="text-muted-foreground font-normal ml-0.5">{mov.unidade}</span>
                           </TableCell>
                           <TableCell className="hidden md:table-cell text-right tabular-nums">
                             {mov.saldoFinal}
+                          </TableCell>
+                          <TableCell className="hidden sm:table-cell">
+                            {mov.referencia && mov.tipo === "pedido" ? (
+                              <a href={`/pedidos?dataInicio=${mov.data}&dataFim=${mov.data}`} className="text-xs text-primary hover:underline font-mono">
+                                #{mov.referencia}
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
                           </TableCell>
                           <TableCell className="hidden lg:table-cell text-muted-foreground text-xs max-w-[200px] truncate">
                             {mov.motivo || "—"}
@@ -786,7 +821,8 @@ export default function EstoquePage() {
                   </TableBody>
                 </Table>
               </div>
-            )}
+            );
+            })()}
           </CardContent>
         </Card>
       )}

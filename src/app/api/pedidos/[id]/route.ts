@@ -75,7 +75,7 @@ export async function PUT(
     if (pedidoData.statusEntrega === "Entregue") {
       const pedidoAtual = await prisma.pedido.findUnique({
         where: { id: idNum },
-        include: { itens: { include: { produto: true } } },
+        include: { cliente: true, itens: { include: { produto: true } } },
       });
       if (!pedidoAtual) {
         return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
@@ -106,29 +106,51 @@ export async function PUT(
           );
         }
 
-        // Debitar estoque em transação
+        // Debitar estoque em transação + criar movimentações para TODOS os itens
         const now = new Date().toISOString();
         const pedidoAtualizado = await prisma.$transaction(async (tx) => {
-          for (const item of itensEstoque) {
-            const saldoInicial = item.produto.estoqueAtual;
-            await tx.movimentacaoEstoque.create({
-              data: {
-                produtoId: item.produtoId,
-                tipo: "pedido",
-                quantidade: -item.quantidade,
-                unidade: "un",
-                saldoInicial,
-                saldoFinal: saldoInicial - item.quantidade,
-                motivo: `Pedido #${idNum}`,
-                referencia: String(idNum),
-                data: pedidoAtual.dataEntrega,
-                criadoEm: now,
-              },
-            });
-            await tx.produto.update({
-              where: { id: item.produtoId },
-              data: { estoqueAtual: { decrement: item.quantidade } },
-            });
+          for (const item of pedidoAtual.itens) {
+            if (item.produto.tipoEstoque === "estoque") {
+              // Produto acumulado: debitar estoqueAtual
+              const saldoInicial = item.produto.estoqueAtual;
+              await tx.movimentacaoEstoque.create({
+                data: {
+                  produtoId: item.produtoId,
+                  tipo: "pedido",
+                  quantidade: -item.quantidade,
+                  unidade: "un",
+                  saldoInicial,
+                  saldoFinal: saldoInicial - item.quantidade,
+                  motivo: `Pedido #${idNum} — ${pedidoAtual.cliente?.nome || ""}`.trim(),
+                  referencia: String(idNum),
+                  data: pedidoAtual.dataEntrega,
+                  criadoEm: now,
+                },
+              });
+              await tx.produto.update({
+                where: { id: item.produtoId },
+                data: { estoqueAtual: { decrement: item.quantidade } },
+              });
+            } else {
+              // Produto diário: criar movimentação de saída (não altera estoqueAtual)
+              const pesoKg = item.produto.pesoUnitarioGramas
+                ? (item.quantidade * item.produto.pesoUnitarioGramas) / 1000
+                : item.quantidade;
+              await tx.movimentacaoEstoque.create({
+                data: {
+                  produtoId: item.produtoId,
+                  tipo: "pedido",
+                  quantidade: -pesoKg,
+                  unidade: item.produto.pesoUnitarioGramas ? "kg" : "un",
+                  saldoInicial: 0,
+                  saldoFinal: 0,
+                  motivo: `Pedido #${idNum} — ${pedidoAtual.cliente?.nome || ""}`.trim(),
+                  referencia: String(idNum),
+                  data: pedidoAtual.dataEntrega,
+                  criadoEm: now,
+                },
+              });
+            }
           }
 
           return tx.pedido.update({
