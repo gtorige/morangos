@@ -71,6 +71,77 @@ export async function PUT(
       return NextResponse.json(pedido);
     }
 
+    // Se está marcando como "Entregue", debitar estoque de produtos tipo "estoque"
+    if (pedidoData.statusEntrega === "Entregue") {
+      const pedidoAtual = await prisma.pedido.findUnique({
+        where: { id: idNum },
+        include: { itens: { include: { produto: true } } },
+      });
+      if (!pedidoAtual) {
+        return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
+      }
+
+      // Só debitar se o pedido NÃO estava como Entregue antes (evitar debitar duas vezes)
+      if (pedidoAtual.statusEntrega !== "Entregue") {
+        const itensEstoque = pedidoAtual.itens.filter(
+          (item) => item.produto.tipoEstoque === "estoque"
+        );
+
+        // Verificar estoque suficiente
+        const deficit: { produto: string; necessario: number; disponivel: number; falta: number }[] = [];
+        for (const item of itensEstoque) {
+          if (item.produto.estoqueAtual < item.quantidade) {
+            deficit.push({
+              produto: item.produto.nome,
+              necessario: item.quantidade,
+              disponivel: item.produto.estoqueAtual,
+              falta: item.quantidade - item.produto.estoqueAtual,
+            });
+          }
+        }
+        if (deficit.length > 0) {
+          return NextResponse.json(
+            { error: "Estoque insuficiente", deficit },
+            { status: 409 }
+          );
+        }
+
+        // Debitar estoque em transação
+        const now = new Date().toISOString();
+        const pedidoAtualizado = await prisma.$transaction(async (tx) => {
+          for (const item of itensEstoque) {
+            const saldoInicial = item.produto.estoqueAtual;
+            await tx.movimentacaoEstoque.create({
+              data: {
+                produtoId: item.produtoId,
+                tipo: "pedido",
+                quantidade: -item.quantidade,
+                unidade: "un",
+                saldoInicial,
+                saldoFinal: saldoInicial - item.quantidade,
+                motivo: `Pedido #${idNum}`,
+                referencia: String(idNum),
+                data: pedidoAtual.dataEntrega,
+                criadoEm: now,
+              },
+            });
+            await tx.produto.update({
+              where: { id: item.produtoId },
+              data: { estoqueAtual: { decrement: item.quantidade } },
+            });
+          }
+
+          return tx.pedido.update({
+            where: { id: idNum },
+            data: pedidoData,
+            include: PEDIDO_INCLUDE,
+          });
+        });
+
+        return NextResponse.json(pedidoAtualizado);
+      }
+    }
+
     const pedido = await prisma.pedido.update({
       where: { id: idNum },
       data: pedidoData,

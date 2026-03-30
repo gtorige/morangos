@@ -31,6 +31,7 @@ interface Cliente {
   numero: string;
   bairro: string;
   cidade: string;
+  observacoes?: string;
 }
 
 export default function NovoPedidoPage() {
@@ -524,6 +525,9 @@ export default function NovoPedidoPage() {
                 <p>
                   <strong>Cidade:</strong> {selectedCliente.cidade}
                 </p>
+                {selectedCliente.observacoes && (
+                  <p className="text-xs text-muted-foreground italic mt-1">Obs: {selectedCliente.observacoes}</p>
+                )}
               </div>
             )}
 

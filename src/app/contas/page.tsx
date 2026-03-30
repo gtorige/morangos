@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useRef, useCallback, useMemo, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { differenceInDays, parseISO, isToday, isPast } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -94,13 +95,14 @@ type Tab = "contas" | "fornecedores" | "categorias";
 
 // ── Column config ──
 
-type ContaColKey = "fornecedor" | "categoria" | "subcategoria" | "tipo" | "valor" | "vencimento" | "situacao";
+type ContaColKey = "fornecedor" | "categoria" | "subcategoria" | "tipo" | "parcelas" | "valor" | "vencimento" | "situacao";
 
 const COLUNAS_CONTAS_DEFAULT: { key: ContaColKey; label: string; visible: boolean; required?: boolean }[] = [
   { key: "fornecedor", label: "Fornecedor", visible: true, required: true },
   { key: "categoria", label: "Categoria", visible: true },
   { key: "subcategoria", label: "Subcategoria", visible: true },
   { key: "tipo", label: "Tipo", visible: true },
+  { key: "parcelas", label: "Parcelas", visible: true },
   { key: "valor", label: "Valor", visible: true, required: true },
   { key: "vencimento", label: "Vencimento", visible: true },
   { key: "situacao", label: "Situação", visible: true, required: true },
@@ -161,7 +163,11 @@ function getSituacaoBadge(conta: Conta) {
 
 // ── Component ──
 
-export default function ContasPage() {
+export default function ContasPageWrapper() {
+  return <Suspense><ContasPage /></Suspense>;
+}
+
+function ContasPage() {
   const [tab, setTab] = useState<Tab>("contas");
 
   // Contas state
@@ -205,17 +211,42 @@ export default function ContasPage() {
   }
 
   // Filters
+  const searchParams = useSearchParams();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterBusca, setFilterBusca] = useState("");
   const [filterCategoriaId, setFilterCategoriaId] = useState("");
   const [filterSubcategoriaId, setFilterSubcategoriaId] = useState("");
   const [filterTipo, setFilterTipo] = useState("");
-  const [filterSituacao, setFilterSituacao] = useState("");
-  const [filterVencDe, setFilterVencDe] = useState("");
-  const [filterVencAte, setFilterVencAte] = useState("");
+  const [filterSituacao, setFilterSituacao] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("situacao") || "";
+  });
+  const [filterVencDe, setFilterVencDe] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("dataInicio") || "";
+  });
+  const [filterVencAte, setFilterVencAte] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("dataFim") || "";
+  });
+
+  const [sortField, setSortField] = useState<ContaColKey>("vencimento");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  // Apply URL params when searchParams changes (e.g. from dashboard navigation)
+  useEffect(() => {
+    const urlSituacao = searchParams.get("situacao");
+    const urlDataInicio = searchParams.get("dataInicio");
+    const urlDataFim = searchParams.get("dataFim");
+    if (urlSituacao || urlDataInicio || urlDataFim) {
+      if (urlSituacao) setFilterSituacao(urlSituacao);
+      if (urlDataInicio) setFilterVencDe(urlDataInicio);
+      if (urlDataFim) setFilterVencAte(urlDataFim);
+    }
+  }, [searchParams]);
 
   const filteredContas = useMemo(() => {
-    return contas.filter((c) => {
+    const filtered = contas.filter((c) => {
       if (filterBusca && !c.fornecedorNome.toLowerCase().includes(filterBusca.toLowerCase())) return false;
       if (filterCategoriaId && String(c.categoriaId) !== filterCategoriaId) return false;
       if (filterSubcategoriaId && String(c.subcategoriaId) !== filterSubcategoriaId) return false;
@@ -241,7 +272,20 @@ export default function ContasPage() {
       if (filterVencAte && c.vencimento > filterVencAte) return false;
       return true;
     });
-  }, [contas, filterBusca, filterCategoriaId, filterSubcategoriaId, filterTipo, filterSituacao, filterVencDe, filterVencAte]);
+    const dir = sortDir === "asc" ? 1 : -1;
+    return filtered.sort((a, b) => {
+      switch (sortField) {
+        case "fornecedor": return a.fornecedorNome.localeCompare(b.fornecedorNome) * dir;
+        case "categoria": return (a.categoria || "").localeCompare(b.categoria || "") * dir;
+        case "tipo": return (a.tipoFinanceiro || "").localeCompare(b.tipoFinanceiro || "") * dir;
+        case "parcelas": return ((a.parcelas || 1) - (b.parcelas || 1)) * dir;
+        case "valor": return (a.valor - b.valor) * dir;
+        case "situacao": return a.situacao.localeCompare(b.situacao) * dir;
+        case "vencimento":
+        default: return a.vencimento.localeCompare(b.vencimento) * dir;
+      }
+    });
+  }, [contas, filterBusca, filterCategoriaId, filterSubcategoriaId, filterTipo, filterSituacao, filterVencDe, filterVencAte, sortField, sortDir]);
 
   const activeFiltersCount = [filterBusca, filterCategoriaId, filterSubcategoriaId, filterTipo, filterSituacao, filterVencDe, filterVencAte].filter(Boolean).length;
 
@@ -407,6 +451,7 @@ export default function ContasPage() {
           case "categoria": return getCategoriaNome(conta);
           case "subcategoria": return subcategorias.find((s) => s.id === conta.subcategoriaId)?.nome ?? "";
           case "tipo": return conta.tipoFinanceiro ?? "";
+          case "parcelas": return conta.parcelas > 1 ? `${conta.parcelaNumero}/${conta.parcelas}` : "";
           case "valor": return conta.valor.toFixed(2).replace(".", ",");
           case "vencimento": return formatDate(conta.vencimento);
           case "situacao": return conta.situacao;
@@ -795,6 +840,10 @@ export default function ContasPage() {
         return item.tipoFinanceiro ? (
           <StatusBadge status={item.tipoFinanceiro} context="financeiro" />
         ) : <span className="text-muted-foreground">—</span>;
+      case "parcelas":
+        return item.parcelas > 1 ? (
+          <span className="text-xs text-muted-foreground">{item.parcelaNumero}/{item.parcelas}x</span>
+        ) : <span className="text-muted-foreground">—</span>;
       case "valor":
         return <span>{formatPrice(item.valor)}</span>;
       case "vencimento":
@@ -1025,7 +1074,25 @@ export default function ContasPage() {
                     />
                   </TableHead>
                   {visCols.map((col) => (
-                    <TableHead key={col.key}>{col.label}</TableHead>
+                    <TableHead key={col.key}>
+                      <button
+                        type="button"
+                        className="flex items-center gap-1 hover:text-foreground transition-colors"
+                        onClick={() => {
+                          if (sortField === col.key) {
+                            setSortDir(sortDir === "asc" ? "desc" : "asc");
+                          } else {
+                            setSortField(col.key);
+                            setSortDir("asc");
+                          }
+                        }}
+                      >
+                        {col.label}
+                        {sortField === col.key && (
+                          sortDir === "asc" ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />
+                        )}
+                      </button>
+                    </TableHead>
                   ))}
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
@@ -1128,10 +1195,12 @@ export default function ContasPage() {
                               );
                               if (col.key === "tipo") return (
                                 <TableCell key="tipo">
-                                  <div className="flex flex-col gap-0.5">
-                                    {item.tipoFinanceiro && <StatusBadge status={item.tipoFinanceiro} context="financeiro" />}
-                                    <span className="text-xs text-muted-foreground">{pagas}/{grupo2.length}x pagas</span>
-                                  </div>
+                                  {item.tipoFinanceiro ? <StatusBadge status={item.tipoFinanceiro} context="financeiro" /> : <span className="text-muted-foreground">—</span>}
+                                </TableCell>
+                              );
+                              if (col.key === "parcelas") return (
+                                <TableCell key="parcelas">
+                                  <span className="text-xs text-muted-foreground">{pagas}/{grupo2.length}x pagas</span>
                                 </TableCell>
                               );
                               if (col.key === "valor") return (
@@ -1261,16 +1330,16 @@ export default function ContasPage() {
               <form onSubmit={handleContaSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="fornecedor">Fornecedor</Label>
-                  <Input
+                  <select
                     id="fornecedor"
-                    list="fornecedor-suggestions"
                     value={contaForm.fornecedorNome}
                     onChange={(e) => setContaForm({ ...contaForm, fornecedorNome: e.target.value })}
+                    className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
                     required
-                  />
-                  <datalist id="fornecedor-suggestions">
-                    {fornecedorNames.map((s) => (<option key={s} value={s} />))}
-                  </datalist>
+                  >
+                    <option value="">Selecione...</option>
+                    {fornecedorNames.map((s) => (<option key={s} value={s}>{s}</option>))}
+                  </select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="categoria">Categoria</Label>

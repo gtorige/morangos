@@ -10,12 +10,6 @@ import { TableSkeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { TabsNav, type TabItem } from "@/components/ui/tabs-nav";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import {
   Table,
@@ -28,7 +22,6 @@ import {
 import {
   Plus,
   ClipboardList,
-  Filter,
   Copy,
   Pencil,
   Trash2,
@@ -47,6 +40,7 @@ import {
   Download,
   MoreHorizontal,
   Search,
+  MessageCircle,
 } from "lucide-react";
 import { calcSubtotal as calcSubtotalBase } from "@/lib/pedido-utils";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -70,7 +64,7 @@ interface Pedido {
   taxaEntrega: number;
   observacoes: string;
   recorrenteId: number | null;
-  cliente: { id: number; nome: string; telefone?: string; rua?: string; numero?: string; bairro: string; cidade?: string };
+  cliente: { id: number; nome: string; telefone?: string; rua?: string; numero?: string; bairro: string; cidade?: string; observacoes?: string };
   formaPagamento: { id: number; nome: string } | null;
   itens: PedidoItem[];
 }
@@ -78,9 +72,11 @@ interface Pedido {
 interface Filters {
   clientes: string[];
   bairros: string[];
+  cidades: string[];
   formasPagamento: number[];
   situacaoPagamento: string;
   statusEntrega: string[];
+  statusPedido: string[];
   dataInicio: string;
   dataFim: string;
   recorrente: string;
@@ -90,9 +86,11 @@ interface Filters {
 const defaultFilters: Filters = {
   clientes: [],
   bairros: [],
+  cidades: [],
   formasPagamento: [],
   situacaoPagamento: "",
   statusEntrega: ["Pendente", "Em rota", "Entregue"],
+  statusPedido: [],
   dataInicio: todayStr(),
   dataFim: todayStr(),
   recorrente: "",
@@ -101,9 +99,11 @@ const defaultFilters: Filters = {
 const emptyFilters: Filters = {
   clientes: [],
   bairros: [],
+  cidades: [],
   formasPagamento: [],
   situacaoPagamento: "",
   statusEntrega: [],
+  statusPedido: [],
   dataInicio: "",
   dataFim: "",
   recorrente: "",
@@ -180,13 +180,27 @@ function PedidosPageInner() {
   const searchParams = useSearchParams();
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [allPedidos, setAllPedidos] = useState<Pedido[]>([]); // unfiltered for dropdown options
+  const [mensagensWpp, setMensagensWpp] = useState<{id: number; nome: string; texto: string}[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<Filters>(() => {
     if (typeof window === "undefined") return defaultFilters;
-    // Check URL params first (e.g. from notification banner)
-    const urlSituacao = new URLSearchParams(window.location.search).get("situacaoPagamento");
-    if (urlSituacao) {
-      return { ...defaultFilters, situacaoPagamento: urlSituacao, dataInicio: "", dataFim: "", statusEntrega: ["Entregue"], clientes: [], bairros: [] };
+    // Check URL params first (e.g. from dashboard/notification)
+    const params = new URLSearchParams(window.location.search);
+    const urlSituacao = params.get("situacaoPagamento");
+    const urlStatusEntrega = params.get("statusEntrega");
+    const urlDataInicio = params.get("dataInicio");
+    const urlDataFim = params.get("dataFim");
+    const hasUrlFilters = urlSituacao || urlStatusEntrega || urlDataInicio || urlDataFim;
+    if (hasUrlFilters) {
+      return {
+        ...defaultFilters,
+        situacaoPagamento: urlSituacao || "",
+        statusEntrega: urlStatusEntrega ? urlStatusEntrega.split(",") : (urlSituacao && !urlStatusEntrega ? ["Entregue"] : []),
+        dataInicio: urlDataInicio || "",
+        dataFim: urlDataFim || "",
+        clientes: [],
+        bairros: [],
+      };
     }
     try {
       const saved = localStorage.getItem("pedidos-filters");
@@ -200,7 +214,14 @@ function PedidosPageInner() {
     } catch { /* ignore */ }
     return defaultFilters;
   });
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [drawerFiltrosOpen, setDrawerFiltrosOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    if (window.innerWidth >= 1280) {
+      return localStorage.getItem('pedidos-drawer-open') !== 'false';
+    }
+    return false;
+  });
+  const [isDesktopLarge, setIsDesktopLarge] = useState(false);
   const [busca, setBusca] = useState("");
   const [tab, setTab] = useState<StatusTab>(() => {
     if (typeof window === "undefined") return "todos";
@@ -226,12 +247,31 @@ function PedidosPageInner() {
   const [editingDateId, setEditingDateId] = useState<number | null>(null);
   const [editingDateValue, setEditingDateValue] = useState("");
 
-  // Apply URL params (e.g. from notification banner)
+  // Apply URL params (e.g. from dashboard/notification)
   useEffect(() => {
     const urlSituacao = searchParams.get("situacaoPagamento");
-    if (urlSituacao) {
-      setFilters({ ...defaultFilters, situacaoPagamento: urlSituacao, dataInicio: "", dataFim: "", statusEntrega: ["Entregue"], clientes: [], bairros: [] });
-      setTab("pendente_pgto");
+    const urlStatusEntrega = searchParams.get("statusEntrega");
+    const urlDataInicio = searchParams.get("dataInicio");
+    const urlDataFim = searchParams.get("dataFim");
+    const hasUrlFilters = urlSituacao || urlStatusEntrega || urlDataInicio || urlDataFim;
+    if (hasUrlFilters) {
+      const newFilters: Filters = {
+        ...emptyFilters,
+        situacaoPagamento: urlSituacao || "",
+        statusEntrega: urlStatusEntrega ? urlStatusEntrega.split(",") : (urlSituacao && !urlStatusEntrega ? ["Entregue"] : []),
+        dataInicio: urlDataInicio || "",
+        dataFim: urlDataFim || "",
+      };
+      setFilters(newFilters);
+      if (urlSituacao === "Pendente" && urlStatusEntrega === "Entregue") {
+        setTab("pendente_pgto");
+      } else if (urlSituacao === "Pago") {
+        setTab("concluidos");
+      } else {
+        setTab("todos");
+      }
+      // Force immediate fetch with URL filters (bypass debounce)
+      fetchPedidos(newFilters);
     }
   }, [searchParams]);
 
@@ -275,8 +315,6 @@ function PedidosPageInner() {
     return COLUNAS_DEFAULT.map(c => ({ key: c.key, visible: c.defaultVisible ?? true }));
   });
   const [colunasOpen, setColunasOpen] = useState(false);
-  const [clienteSearch, setClienteSearch] = useState("");
-  const [bairroSearch, setBairroSearch] = useState("");
 
   // Drawer client history state
   const [drawerHistoryOpen, setDrawerHistoryOpen] = useState(false);
@@ -295,6 +333,29 @@ function PedidosPageInner() {
   useEffect(() => { localStorage.setItem("pedidos-sort-dir", sortDir); }, [sortDir]);
   useEffect(() => { localStorage.setItem('pedidos-colunas', JSON.stringify(colunasConfig)); }, [colunasConfig]);
 
+  // Breakpoint detection for drawer layout
+  useEffect(() => {
+    function check() { setIsDesktopLarge(window.innerWidth >= 1280); }
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  // Persist drawer state
+  useEffect(() => {
+    localStorage.setItem('pedidos-drawer-open', String(drawerFiltrosOpen));
+  }, [drawerFiltrosOpen]);
+
+  // Escape key handler for floating drawer (mobile/tablet)
+  useEffect(() => {
+    if (isDesktopLarge || !drawerFiltrosOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setDrawerFiltrosOpen(false);
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [drawerFiltrosOpen, isDesktopLarge]);
+
   useEffect(() => {
     if (!colunasOpen) return;
     function onClickOutside(e: MouseEvent) {
@@ -309,6 +370,10 @@ function PedidosPageInner() {
     const timer = setTimeout(() => fetchPedidos(), 300);
     return () => clearTimeout(timer);
   }, [filters]);
+
+  useEffect(() => {
+    fetch("/api/mensagens-whatsapp").then(r => r.ok ? r.json() : []).then(setMensagensWpp).catch(() => {});
+  }, []);
 
   // Fetch drawer pedido details
   useEffect(() => {
@@ -655,6 +720,16 @@ function PedidosPageInner() {
           f.clientes.includes(p.cliente?.nome)
         );
       }
+      if (f.cidades.length > 0) {
+        filtered = filtered.filter((p: Pedido) =>
+          p.cliente?.cidade && f.cidades.includes(p.cliente.cidade)
+        );
+      }
+      if (f.statusPedido?.length > 0) {
+        filtered = filtered.filter((p: Pedido) =>
+          f.statusPedido.includes(p.statusEntrega)
+        );
+      }
       if (f.recorrente === "sim") {
         filtered = filtered.filter((p: Pedido) => p.recorrenteId != null);
       } else if (f.recorrente === "nao") {
@@ -667,10 +742,6 @@ function PedidosPageInner() {
     } finally {
       setLoading(false);
     }
-  }
-
-  function handleClearFilters() {
-    setFilters(emptyFilters);
   }
 
   async function handleMarkPago(pedido: Pedido) {
@@ -950,12 +1021,149 @@ function PedidosPageInner() {
     pendente_tudo: pedidos.filter((p) => p.statusEntrega !== "Entregue" && p.statusEntrega !== "Cancelado").length,
   };
 
+  const activeFilterCount = [
+    filters.clientes.length > 0,
+    filters.bairros.length > 0,
+    filters.cidades.length > 0,
+    filters.formasPagamento.length > 0,
+    filters.statusPedido?.length > 0,
+    filters.situacaoPagamento !== '',
+    filters.recorrente !== '',
+  ].filter(Boolean).length;
+
   const tabs: { key: StatusTab; label: string; count: number }[] = [
     { key: "todos", label: "Todos", count: counts.todos },
     { key: "pendente_tudo", label: "Pendente Entrega", count: counts.pendente_tudo },
     { key: "pendente_pgto", label: "Pendente Pgto", count: counts.pendente_pgto },
     { key: "concluidos", label: "Concluídos", count: counts.concluidos },
   ];
+
+  // eslint-disable-next-line react/no-unstable-nested-components
+  function DrawerFiltrosContent() {
+    const uniqueClientesDrawer = [...new Set(allPedidos.map(p => p.cliente?.nome).filter(Boolean) as string[])].sort();
+    const uniqueBairrosDrawer = [...new Set(allPedidos.map(p => p.cliente?.bairro).filter(Boolean) as string[])].sort();
+    const uniqueCidadesDrawer = [...new Set(allPedidos.map(p => p.cliente?.cidade).filter(Boolean) as string[])].sort();
+
+    const [drawerClienteSearch, setDrawerClienteSearch] = useState('');
+    const [drawerBairroSearch, setDrawerBairroSearch] = useState('');
+    const [drawerCidadeSearch, setDrawerCidadeSearch] = useState('');
+
+    function toggleArrayItem<T>(field: keyof Filters, item: T) {
+      setFilters(f => {
+        const arr = (f[field] as unknown as T[]) || [];
+        return { ...f, [field]: arr.includes(item) ? arr.filter(x => x !== item) : [...arr, item] };
+      });
+    }
+
+    return (
+      <div className="flex flex-col h-full overflow-hidden border border-border rounded-lg bg-card">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+          <h2 className="text-sm font-semibold">Filtros</h2>
+          <Button variant="ghost" size="icon-sm" onClick={() => setDrawerFiltrosOpen(false)}>
+            <X className="size-4" />
+          </Button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Status do Pedido */}
+          <FilterSection label="Status do Pedido">
+            <div className="flex flex-wrap gap-1.5">
+              {['Pendente', 'Em rota', 'Entregue', 'Cancelado'].map(s => (
+                <button key={s} onClick={() => toggleArrayItem('statusPedido', s)}
+                  className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${(filters.statusPedido || []).includes(s) ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </FilterSection>
+
+          {/* Cliente */}
+          <FilterSection label="Cliente">
+            <input placeholder="Buscar cliente..." value={drawerClienteSearch} onChange={e => setDrawerClienteSearch(e.target.value)} className="w-full text-xs px-2 py-1.5 rounded-md border border-input bg-transparent mb-1.5" />
+            <div className="max-h-32 overflow-y-auto space-y-0.5">
+              {uniqueClientesDrawer.filter(c => !drawerClienteSearch || c.toLowerCase().includes(drawerClienteSearch.toLowerCase())).map(c => (
+                <label key={c} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-accent/50 rounded px-1 py-0.5">
+                  <input type="checkbox" checked={filters.clientes.includes(c)} onChange={() => toggleArrayItem('clientes', c)} className="accent-[var(--color-primary)]" />
+                  {c}
+                </label>
+              ))}
+            </div>
+          </FilterSection>
+
+          {/* Bairro */}
+          <FilterSection label="Bairro">
+            <input placeholder="Buscar bairro..." value={drawerBairroSearch} onChange={e => setDrawerBairroSearch(e.target.value)} className="w-full text-xs px-2 py-1.5 rounded-md border border-input bg-transparent mb-1.5" />
+            <div className="max-h-32 overflow-y-auto space-y-0.5">
+              {uniqueBairrosDrawer.filter(b => !drawerBairroSearch || b.toLowerCase().includes(drawerBairroSearch.toLowerCase())).map(b => (
+                <label key={b} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-accent/50 rounded px-1 py-0.5">
+                  <input type="checkbox" checked={filters.bairros.includes(b)} onChange={() => toggleArrayItem('bairros', b)} className="accent-[var(--color-primary)]" />
+                  {b}
+                </label>
+              ))}
+            </div>
+          </FilterSection>
+
+          {/* Cidade */}
+          <FilterSection label="Cidade">
+            <input placeholder="Buscar cidade..." value={drawerCidadeSearch} onChange={e => setDrawerCidadeSearch(e.target.value)} className="w-full text-xs px-2 py-1.5 rounded-md border border-input bg-transparent mb-1.5" />
+            <div className="max-h-32 overflow-y-auto space-y-0.5">
+              {uniqueCidadesDrawer.filter(c => !drawerCidadeSearch || c.toLowerCase().includes(drawerCidadeSearch.toLowerCase())).map(c => (
+                <label key={c} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-accent/50 rounded px-1 py-0.5">
+                  <input type="checkbox" checked={filters.cidades.includes(c)} onChange={() => toggleArrayItem('cidades', c)} className="accent-[var(--color-primary)]" />
+                  {c}
+                </label>
+              ))}
+            </div>
+          </FilterSection>
+
+          {/* Forma de Pagamento */}
+          <FilterSection label="Forma de Pagamento">
+            <div className="space-y-0.5">
+              {[...new Map(allPedidos.filter(p => p.formaPagamento).map(p => [p.formaPagamento!.id, p.formaPagamento!])).values()].map(fp => (
+                <label key={fp.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-accent/50 rounded px-1 py-0.5">
+                  <input type="checkbox" checked={filters.formasPagamento.includes(fp.id)} onChange={() => toggleArrayItem('formasPagamento', fp.id)} className="accent-[var(--color-primary)]" />
+                  {fp.nome}
+                </label>
+              ))}
+            </div>
+          </FilterSection>
+
+          {/* Situacao Pagamento */}
+          <FilterSection label="Situacao Pagamento">
+            <div className="flex gap-1.5">
+              {['', 'Pendente', 'Pago'].map(s => (
+                <button key={s} onClick={() => setFilters(f => ({...f, situacaoPagamento: s}))}
+                  className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${filters.situacaoPagamento === s ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}>
+                  {s || 'Todos'}
+                </button>
+              ))}
+            </div>
+          </FilterSection>
+
+          {/* Recorrente */}
+          <FilterSection label="Recorrente">
+            <div className="flex gap-1.5">
+              {[{v: '', l: 'Todos'}, {v: 'sim', l: 'Sim'}, {v: 'nao', l: 'Nao'}].map(opt => (
+                <button key={opt.v} onClick={() => setFilters(f => ({...f, recorrente: opt.v}))}
+                  className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${filters.recorrente === opt.v ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}>
+                  {opt.l}
+                </button>
+              ))}
+            </div>
+          </FilterSection>
+        </div>
+
+        {/* Footer */}
+        <div className="px-4 py-3 border-t border-border shrink-0">
+          <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground" onClick={() => { setFilters(f => ({...emptyFilters, dataInicio: f.dataInicio, dataFim: f.dataFim})); }}>
+            Limpar filtros
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -984,41 +1192,34 @@ function PedidosPageInner() {
             onChange={(e) => setBusca(e.target.value)}
           />
         </div>
-        <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 shrink-0" onClick={() => setFiltersOpen(!filtersOpen)}>
-          <Filter className="size-3.5" />
-          Filtros
+        <Button
+          variant={activeFilterCount > 0 ? "default" : "outline"}
+          size="sm"
+          className="h-8 text-xs gap-1.5 shrink-0"
+          onClick={() => setDrawerFiltrosOpen(!drawerFiltrosOpen)}
+        >
+          <SlidersHorizontal className="size-3.5" />
+          {activeFilterCount > 0 ? `Filtros (${activeFilterCount})` : 'Filtros'}
         </Button>
       </div>
 
       {/* Active filter chips */}
-      {(() => {
-        const chips: { label: string; onRemove: () => void }[] = [];
-        if (busca.trim()) chips.push({ label: `Busca: ${busca.trim()}`, onRemove: () => setBusca("") });
-        if (filters.clientes.length > 0) filters.clientes.forEach(c => chips.push({ label: `Cliente: ${c}`, onRemove: () => setFilters(f => ({ ...f, clientes: f.clientes.filter(x => x !== c) })) }));
-        if (filters.bairros.length > 0) filters.bairros.forEach(b => chips.push({ label: `Bairro: ${b}`, onRemove: () => setFilters(f => ({ ...f, bairros: f.bairros.filter(x => x !== b) })) }));
-        if (filters.formasPagamento.length > 0) {
-          filters.formasPagamento.forEach(id => {
+      {(activeFilterCount > 0 || busca.trim()) && (
+        <div className="flex flex-wrap gap-1.5 items-center">
+          {busca.trim() && <Chip label={`Busca: ${busca}`} onRemove={() => setBusca('')} />}
+          {filters.clientes.map(c => <Chip key={c} label={`Cliente: ${c}`} onRemove={() => setFilters(f => ({...f, clientes: f.clientes.filter(x => x !== c)}))} />)}
+          {filters.bairros.map(b => <Chip key={b} label={`Bairro: ${b}`} onRemove={() => setFilters(f => ({...f, bairros: f.bairros.filter(x => x !== b)}))} />)}
+          {filters.cidades.map(c => <Chip key={c} label={`Cidade: ${c}`} onRemove={() => setFilters(f => ({...f, cidades: f.cidades.filter(x => x !== c)}))} />)}
+          {filters.formasPagamento.map(id => {
             const fp = uniqueFormasPag.find(f => f.id === id);
-            chips.push({ label: `F. Pgto: ${fp?.nome || id}`, onRemove: () => setFilters(f => ({ ...f, formasPagamento: f.formasPagamento.filter(x => x !== id) })) });
-          });
-        }
-        if (filters.situacaoPagamento) chips.push({ label: `Pgto: ${filters.situacaoPagamento}`, onRemove: () => setFilters(f => ({ ...f, situacaoPagamento: "" })) });
-        if (filters.recorrente) chips.push({ label: `Recorrente: ${filters.recorrente === "sim" ? "Sim" : "Não"}`, onRemove: () => setFilters(f => ({ ...f, recorrente: "" })) });
-        if (chips.length === 0) return null;
-        return (
-          <div className="flex flex-wrap gap-1.5">
-            {chips.map((chip, i) => (
-              <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-primary/15 text-primary border border-primary/30">
-                {chip.label}
-                <button onClick={chip.onRemove} className="opacity-60 hover:opacity-100"><X className="size-3" /></button>
-              </span>
-            ))}
-            <button onClick={() => { handleClearFilters(); setBusca(""); }} className="px-2.5 py-1 rounded-full text-xs border border-border text-muted-foreground hover:text-foreground transition-colors">
-              Limpar filtros
-            </button>
-          </div>
-        );
-      })()}
+            return <Chip key={id} label={`F. Pgto: ${fp?.nome || id}`} onRemove={() => setFilters(f => ({...f, formasPagamento: f.formasPagamento.filter(x => x !== id)}))} />;
+          })}
+          {filters.situacaoPagamento && <Chip label={`Situacao: ${filters.situacaoPagamento}`} onRemove={() => setFilters(f => ({...f, situacaoPagamento: ''}))} />}
+          {filters.statusPedido?.map(s => <Chip key={s} label={`Status: ${s}`} onRemove={() => setFilters(f => ({...f, statusPedido: (f.statusPedido || []).filter(x => x !== s)}))} />)}
+          {filters.recorrente && <Chip label={`Recorrente: ${filters.recorrente === "sim" ? "Sim" : "Nao"}`} onRemove={() => setFilters(f => ({...f, recorrente: ''}))} />}
+          <button onClick={() => { setBusca(''); setFilters(f => ({...emptyFilters, dataInicio: f.dataInicio, dataFim: f.dataFim})); setTab('todos'); }} className="px-2.5 py-1 rounded-full text-xs border border-border text-muted-foreground hover:text-foreground transition-colors">Limpar filtros</button>
+        </div>
+      )}
 
       {/* Date range shortcuts */}
       <div className="flex flex-wrap gap-1.5">
@@ -1055,194 +1256,8 @@ function PedidosPageInner() {
       {/* Status Tabs */}
       <TabsNav items={tabs} value={tab} onChange={(key) => setTab(key as StatusTab)} />
 
-      <Card className={filtersOpen ? "" : "hidden"}>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Filter className="size-4" />
-            <CardTitle>Filtros Avançados</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              <div className="space-y-2">
-                <Label>Cliente {filters.clientes.length > 0 && <span className="text-xs text-primary ml-1">({filters.clientes.length})</span>}</Label>
-                <div className="rounded-lg border border-input bg-transparent">
-                  <div className="p-1.5 border-b border-input">
-                    <input
-                      type="text"
-                      placeholder="Buscar cliente..."
-                      value={clienteSearch}
-                      onChange={(e) => setClienteSearch(e.target.value)}
-                      className="w-full bg-transparent text-xs px-1.5 py-1 outline-none placeholder:text-muted-foreground"
-                    />
-                  </div>
-                  <div className="space-y-1 max-h-[120px] overflow-y-auto p-2">
-                    {uniqueClientes.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">Nenhum cliente</p>
-                    ) : uniqueClientes.filter(nome => !clienteSearch || nome.toLowerCase().includes(clienteSearch.toLowerCase())).map(nome => (
-                      <label key={nome} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-accent/50 rounded px-1 py-0.5">
-                        <input
-                          type="checkbox"
-                          checked={filters.clientes.includes(nome)}
-                          onChange={(e) => {
-                            const next = e.target.checked
-                              ? [...filters.clientes, nome]
-                              : filters.clientes.filter(c => c !== nome);
-                            setFilters({ ...filters, clientes: next });
-                          }}
-                          className="accent-[var(--color-primary)]"
-                        />
-                        {nome}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Bairro {filters.bairros.length > 0 && <span className="text-xs text-primary ml-1">({filters.bairros.length})</span>}</Label>
-                <div className="rounded-lg border border-input bg-transparent">
-                  <div className="p-1.5 border-b border-input">
-                    <input
-                      type="text"
-                      placeholder="Buscar bairro..."
-                      value={bairroSearch}
-                      onChange={(e) => setBairroSearch(e.target.value)}
-                      className="w-full bg-transparent text-xs px-1.5 py-1 outline-none placeholder:text-muted-foreground"
-                    />
-                  </div>
-                  <div className="space-y-1 max-h-[120px] overflow-y-auto p-2">
-                    {uniqueBairros.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">Nenhum bairro</p>
-                    ) : uniqueBairros.filter(bairro => !bairroSearch || bairro.toLowerCase().includes(bairroSearch.toLowerCase())).map(bairro => (
-                      <label key={bairro} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-accent/50 rounded px-1 py-0.5">
-                        <input
-                          type="checkbox"
-                          checked={filters.bairros.includes(bairro)}
-                          onChange={(e) => {
-                            const next = e.target.checked
-                              ? [...filters.bairros, bairro]
-                              : filters.bairros.filter(b => b !== bairro);
-                            setFilters({ ...filters, bairros: next });
-                          }}
-                          className="accent-[var(--color-primary)]"
-                        />
-                        {bairro}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Forma de Pagamento</Label>
-                <div className="space-y-1 max-h-[120px] overflow-y-auto rounded-lg border border-input bg-transparent p-2">
-                  {uniqueFormasPag.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">Nenhuma</p>
-                  ) : uniqueFormasPag.map(fp => (
-                    <label key={fp.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-accent/50 rounded px-1 py-0.5">
-                      <input
-                        type="checkbox"
-                        checked={filters.formasPagamento.includes(fp.id)}
-                        onChange={(e) => {
-                          const next = e.target.checked
-                            ? [...filters.formasPagamento, fp.id]
-                            : filters.formasPagamento.filter(id => id !== fp.id);
-                          setFilters({ ...filters, formasPagamento: next });
-                        }}
-                        className="accent-[var(--color-primary)]"
-                      />
-                      {fp.nome}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Situação Pagamento</Label>
-                <select
-                  value={filters.situacaoPagamento}
-                  onChange={(e) =>
-                    setFilters({ ...filters, situacaoPagamento: e.target.value })
-                  }
-                  className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                >
-                  <option value="">Todos</option>
-                  <option value="Pendente">Pendente</option>
-                  <option value="Pago">Pago</option>
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Status Entrega</Label>
-                <div className="flex flex-wrap gap-1.5 mt-1">
-                  {["Pendente", "Em rota", "Entregue", "Cancelado"].map((st) => (
-                    <button key={st} type="button"
-                      onClick={() => {
-                        const arr = filters.statusEntrega.includes(st)
-                          ? filters.statusEntrega.filter(s => s !== st)
-                          : [...filters.statusEntrega, st];
-                        setFilters({ ...filters, statusEntrega: arr });
-                      }}
-                      className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                        filters.statusEntrega.includes(st)
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground hover:bg-accent"
-                      }`}>
-                      {st}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="filter-data-inicio">Data de</Label>
-                <Input
-                  id="filter-data-inicio"
-                  type="date"
-                  value={filters.dataInicio}
-                  onChange={(e) =>
-                    setFilters({ ...filters, dataInicio: e.target.value })
-                  }
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="filter-data-fim">Data até</Label>
-                <Input
-                  id="filter-data-fim"
-                  type="date"
-                  value={filters.dataFim}
-                  onChange={(e) =>
-                    setFilters({ ...filters, dataFim: e.target.value })
-                  }
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Recorrente</Label>
-                <select
-                  value={filters.recorrente}
-                  onChange={(e) =>
-                    setFilters({ ...filters, recorrente: e.target.value })
-                  }
-                  className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                >
-                  <option value="">Todos</option>
-                  <option value="sim">Recorrentes</option>
-                  <option value="nao">Avulsos</option>
-                </select>
-              </div>
-            </div>
-
-            <Separator className="my-4" />
-
-            <Button variant="ghost" size="sm" onClick={handleClearFilters} className="text-xs text-muted-foreground">
-              Limpar filtros
-            </Button>
-          </CardContent>
-      </Card>
-
+      <div className="flex gap-4">
+      <div className="flex-1 min-w-0">
       {loading ? (
         <TableSkeleton rows={6} cols={5} />
       ) : filteredByTab.length === 0 ? (
@@ -1644,6 +1659,33 @@ function PedidosPageInner() {
                     })}
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
+                        {pedido.cliente?.telefone && (
+                          <Popover>
+                            <PopoverTrigger render={<Button variant="ghost" size="icon-sm" title="WhatsApp" onClick={(e) => e.stopPropagation()} />}>
+                              <MessageCircle className="size-4 text-green-500" />
+                            </PopoverTrigger>
+                            <PopoverContent className="w-64 p-2" onClick={(e) => e.stopPropagation()}>
+                              <p className="text-xs text-muted-foreground font-medium mb-1">Enviar mensagem:</p>
+                              {mensagensWpp.length === 0 ? (
+                                <p className="text-xs text-muted-foreground italic py-2">Nenhuma mensagem cadastrada</p>
+                              ) : mensagensWpp.map((m) => {
+                                const texto = m.texto
+                                  .replace(/[\u200B\u200C\u200D\uFEFF]/g, "")
+                                  .replace(/\{nome\}/gi, pedido.cliente.nome)
+                                  .replace(/\{total\}/gi, formatPrice(pedido.total));
+                                const num = pedido.cliente.telefone!.replace(/\D/g, '');
+                                const full = num.startsWith('55') ? num : '55' + num;
+                                return (
+                                  <button key={m.id} onClick={() => window.open(`https://wa.me/${full}?text=${encodeURIComponent(texto)}`, '_blank')}
+                                    className="w-full text-left px-2 py-1.5 rounded-md hover:bg-muted transition-colors">
+                                    <p className="text-xs font-medium">{m.nome}</p>
+                                    <p className="text-xs text-muted-foreground truncate">{texto}</p>
+                                  </button>
+                                );
+                              })}
+                            </PopoverContent>
+                          </Popover>
+                        )}
                         <Button variant="ghost" size="icon-sm" onClick={() => handleDuplicar(pedido.id)} title="Duplicar">
                           <Copy className="size-4" />
                         </Button>
@@ -1671,6 +1713,25 @@ function PedidosPageInner() {
             </Table>
           </div>
         </div>
+        </>
+      )}
+      </div>{/* end flex-1 min-w-0 */}
+
+      {/* Side filter drawer on xl+ */}
+      {isDesktopLarge && drawerFiltrosOpen && (
+        <div className="w-72 shrink-0">
+          <DrawerFiltrosContent />
+        </div>
+      )}
+      </div>{/* end flex gap-4 */}
+
+      {/* Floating filter drawer on smaller screens */}
+      {!isDesktopLarge && drawerFiltrosOpen && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/50" onClick={() => setDrawerFiltrosOpen(false)} />
+          <div className="fixed top-0 right-0 z-50 h-full bg-card border-l border-border shadow-xl flex flex-col overflow-hidden w-80 max-w-[90vw]">
+            <DrawerFiltrosContent />
+          </div>
         </>
       )}
 
@@ -1968,7 +2029,12 @@ function PedidosPageInner() {
                 <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
                   {/* Client info */}
                   <div>
-                    <p className="text-sm text-muted-foreground mb-1">Cliente</p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm text-muted-foreground">Cliente</p>
+                      <Button variant="ghost" size="sm" className="text-xs h-6 px-2" onClick={() => window.open(`/clientes?edit=${drawerPedido.clienteId}`, '_blank')}>
+                        <Pencil className="size-3 mr-1" /> Editar
+                      </Button>
+                    </div>
                     <p className="font-medium">{drawerPedido.cliente?.nome}</p>
                     {(drawerPedido.cliente?.rua || drawerPedido.cliente?.bairro) && (
                       <p className="text-sm text-muted-foreground">
@@ -1980,6 +2046,9 @@ function PedidosPageInner() {
                     )}
                     {drawerPedido.cliente?.telefone && (
                       <p className="text-sm text-muted-foreground">{drawerPedido.cliente.telefone}</p>
+                    )}
+                    {drawerPedido.cliente?.observacoes && (
+                      <p className="text-xs text-muted-foreground italic mt-1">Obs: {drawerPedido.cliente.observacoes}</p>
                     )}
                   </div>
 
@@ -2164,6 +2233,24 @@ function PedidosPageInner() {
         onSuccess={fetchPedidos}
         initialData={novoPedidoInitialData}
       />
+    </div>
+  );
+}
+
+function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs bg-primary/15 text-primary border border-primary/30">
+      {label}
+      <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="opacity-60 hover:opacity-100"><X className="size-3" /></button>
+    </span>
+  );
+}
+
+function FilterSection({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="px-4 py-3 border-b border-border/50 last:border-0">
+      <p className="text-xs font-medium text-muted-foreground mb-2">{label}</p>
+      {children}
     </div>
   );
 }

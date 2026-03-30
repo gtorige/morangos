@@ -18,6 +18,51 @@ export interface Produto {
   id: number;
   nome: string;
   preco: number;
+  tipoEstoque: string;
+  pesoUnitarioGramas: number | null;
+  estoqueMinimo: number;
+  estoqueAtual: number;
+  unidadeVenda: string;
+}
+
+export interface Colheita {
+  id: number;
+  produtoId: number;
+  produto?: Produto;
+  quantidade: number;
+  data: string;
+  observacao: string | null;
+  criadoEm: string;
+}
+
+export interface MovimentacaoEstoque {
+  id: number;
+  produtoId: number;
+  produto?: Produto;
+  tipo: string;
+  quantidade: number;
+  unidade: string;
+  lote: string | null;
+  saldoInicial: number;
+  saldoFinal: number;
+  motivo: string | null;
+  referencia: string | null;
+  data: string;
+  criadoEm: string;
+}
+
+export interface EstoqueDia {
+  produtoId: number;
+  nome: string;
+  tipoEstoque: string;
+  colhidoHoje?: number;
+  vendidoHoje?: number;
+  estoqueAtual?: number;
+  estoqueMinimo?: number;
+  disponivel: number;
+  alertaEstoqueBaixo?: boolean;
+  unidadeVenda: string;
+  pesoUnitarioGramas?: number | null;
 }
 
 export interface FormaPagamento {

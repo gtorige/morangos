@@ -28,6 +28,8 @@ import {
   GripVertical,
   Pencil,
   Check,
+  Sprout,
+  Warehouse,
   Bell,
   X,
 } from "lucide-react";
@@ -63,10 +65,12 @@ const navItems = [
   { href: "/clientes", label: "Clientes", icon: Users },
   { href: "/produtos", label: "Produtos", icon: Package },
   { href: "/promocoes", label: "Promoções", icon: Tag },
+  { href: "/producao", label: "Produção", icon: Sprout },
+  { href: "/estoque", label: "Estoque", icon: Warehouse },
   { href: "/contas", label: "Financeiro", icon: Receipt },
+  { href: "/separacao", label: "Separação", icon: ClipboardCheck },
   { href: "/rota", label: "Rota de Entrega", icon: MapPin },
   { href: "/entrega", label: "Modo Entrega", icon: Truck },
-  { href: "/separacao", label: "Separação", icon: ClipboardCheck },
 ];
 
 const adminItems = [
