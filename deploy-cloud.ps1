@@ -24,6 +24,44 @@ function Refresh-Path {
     $env:Path = $m + ';' + $u
 }
 
+function Test-Command($name) {
+    return [bool](Get-Command $name -ErrorAction SilentlyContinue)
+}
+
+function Ensure-VercelCli {
+    if (Test-Command 'vercel') {
+        $vercelVersion = & vercel --version 2>$null | Select-Object -First 1
+        Write-Host "Vercel CLI ja instalada ($vercelVersion)" -ForegroundColor Green
+        return
+    }
+
+    Write-Host 'Vercel CLI nao encontrada. Instalando globalmente...' -ForegroundColor Yellow
+    & npm.cmd install -g vercel 2>&1 | Out-Host
+    Refresh-Path
+    $vercelVersion = & vercel --version 2>$null | Select-Object -First 1
+    if (-not $vercelVersion) {
+        throw 'Falha ao instalar a Vercel CLI.'
+    }
+    Write-Host "Vercel CLI instalada! ($vercelVersion)" -ForegroundColor Green
+}
+
+function Ensure-TursoCli {
+    if (Test-Command 'turso') {
+        $tursoVersion = & turso --version 2>$null | Select-Object -First 1
+        Write-Host "Turso CLI ja instalada ($tursoVersion)" -ForegroundColor Green
+        return
+    }
+
+    Write-Host 'Turso CLI nao encontrada. Instalando via script oficial...' -ForegroundColor Yellow
+    & powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://github.com/tursodatabase/turso/releases/latest/download/turso_cli-installer.ps1 | iex"
+    Refresh-Path
+    $tursoVersion = & turso --version 2>$null | Select-Object -First 1
+    if (-not $tursoVersion) {
+        throw 'Falha ao instalar a Turso CLI.'
+    }
+    Write-Host "Turso CLI instalada! ($tursoVersion)" -ForegroundColor Green
+}
+
 Clear-Host
 Write-Host ''
 Write-Host '  ========================================' -ForegroundColor Green
@@ -43,7 +81,6 @@ Write-Host '  configuracao do .env e os deploys via Vercel CLI.' -ForegroundColo
 Write-Host ''
 Write-Host '  Interacoes manuais que continuam necessarias:' -ForegroundColor Yellow
 Write-Host '  - Login no Turso pelo navegador' -ForegroundColor DarkGray
-Write-Host '  - Copiar URL e token do banco Turso' -ForegroundColor DarkGray
 Write-Host '  - Login na Vercel (se a CLI nao estiver autenticada)' -ForegroundColor DarkGray
 Write-Host '  - Google Maps e opcional' -ForegroundColor DarkGray
 Write-Host ''
@@ -74,60 +111,54 @@ try {
 }
 
 # ============================================================
-# PASSO 2 - CRIAR BANCO NO TURSO (via navegador)
+# PASSO 2 - INSTALAR TURSO CLI
 # ============================================================
-Show-Step 2 'CRIAR BANCO NO TURSO'
+Show-Step 2 'INSTALAR TURSO CLI'
+Ensure-TursoCli
 
-Write-Host 'Vamos criar o banco de dados no Turso.' -ForegroundColor White
-Write-Host 'O navegador vai abrir. Siga os passos:' -ForegroundColor White
-Write-Host ''
-Write-Host '  1. Clique em "Get Started" ou "Sign Up"' -ForegroundColor DarkGray
-Write-Host '  2. Entre com sua conta GitHub (mais facil)' -ForegroundColor DarkGray
-Write-Host '  3. Apos entrar, clique em "Create Database"' -ForegroundColor DarkGray
-Write-Host '  4. Nome: morangos' -ForegroundColor DarkGray
-Write-Host '  5. Regiao: escolha a mais proxima (ex: gru - Sao Paulo)' -ForegroundColor DarkGray
-Write-Host '  6. Clique "Create Database"' -ForegroundColor DarkGray
-Write-Host ''
-Pause-Continue
+# ============================================================
+# PASSO 3 - INSTALAR VERCEL CLI
+# ============================================================
+Show-Step 3 'INSTALAR VERCEL CLI'
+Ensure-VercelCli
 
-Start-Process 'https://turso.tech/app'
-Write-Host 'Navegador aberto. Crie o banco "morangos".' -ForegroundColor Yellow
-Write-Host ''
-Pause-Continue
+# ============================================================
+# PASSO 4 - AUTENTICAR E CONFIGURAR TURSO
+# ============================================================
+Show-Step 4 'CONFIGURAR TURSO'
 
-Write-Host ''
-Write-Host 'Agora copie a URL do banco:' -ForegroundColor White
-Write-Host '  No dashboard do Turso, clique no banco "morangos"' -ForegroundColor DarkGray
-Write-Host '  Copie a URL que aparece (ex: libsql://morangos-seuuser.turso.io)' -ForegroundColor DarkGray
-Write-Host ''
+Write-Host 'Verificando autenticacao da Turso CLI...' -ForegroundColor Yellow
+& turso auth login 2>&1 | Out-Host
 
-while ($true) {
-    $tursoUrl = Read-Host 'Cole a URL do banco aqui'
-    if ($tursoUrl -and $tursoUrl.Trim().StartsWith('libsql://')) { break }
-    Write-Host 'URL invalida. Deve comecar com libsql://' -ForegroundColor Red
+$dbName = 'morangos'
+Write-Host ''
+Write-Host "Verificando banco '$dbName'..." -ForegroundColor Yellow
+$tursoUrl = (& turso db show $dbName --url 2>$null | Select-Object -First 1)
+if (-not $tursoUrl) {
+    Write-Host "Banco '$dbName' nao existe. Criando automaticamente..." -ForegroundColor Yellow
+    & turso db create $dbName 2>&1 | Out-Host
+    $tursoUrl = (& turso db show $dbName --url 2>$null | Select-Object -First 1)
 }
+
+if (-not $tursoUrl) {
+    throw "Nao foi possivel obter a URL do banco '$dbName'."
+}
+
 $tursoUrl = $tursoUrl.Trim()
-Write-Host "URL salva: $tursoUrl" -ForegroundColor Green
+Write-Host "Banco pronto: $tursoUrl" -ForegroundColor Green
 
-Write-Host ''
-Write-Host 'Agora crie um token de acesso:' -ForegroundColor White
-Write-Host '  No dashboard, clique no banco "morangos"' -ForegroundColor DarkGray
-Write-Host '  Va em "Create Token" ou "Generate Token"' -ForegroundColor DarkGray
-Write-Host '  Copie o token gerado' -ForegroundColor DarkGray
-Write-Host ''
-
-while ($true) {
-    $tursoToken = Read-Host 'Cole o token aqui'
-    if ($tursoToken -and $tursoToken.Trim().Length -gt 20) { break }
-    Write-Host 'Token invalido. Deve ter mais de 20 caracteres.' -ForegroundColor Red
+Write-Host 'Gerando token de acesso do Turso...' -ForegroundColor Yellow
+$tursoToken = (& turso db tokens create $dbName 2>$null | Select-Object -First 1)
+if (-not $tursoToken) {
+    throw "Nao foi possivel gerar um token para o banco '$dbName'."
 }
 $tursoToken = $tursoToken.Trim()
-Write-Host 'Token salvo!' -ForegroundColor Green
+Write-Host 'Token gerado!' -ForegroundColor Green
 
 # ============================================================
-# PASSO 3 - BAIXAR O CODIGO
+# PASSO 5 - BAIXAR O CODIGO
 # ============================================================
-Show-Step 3 'BAIXAR O CODIGO'
+Show-Step 5 'BAIXAR O CODIGO'
 
 $deployDir = Join-Path ([Environment]::GetFolderPath('Desktop')) 'morangos-cloud'
 
@@ -149,18 +180,18 @@ if (Test-Path $deployDir) {
 Write-Host 'Codigo baixado!' -ForegroundColor Green
 
 # ============================================================
-# PASSO 4 - INSTALAR DEPENDENCIAS
+# PASSO 6 - INSTALAR DEPENDENCIAS
 # ============================================================
-Show-Step 4 'INSTALAR DEPENDENCIAS'
+Show-Step 6 'INSTALAR DEPENDENCIAS'
 
 Write-Host 'Instalando dependencias (pode demorar 1-2 min)...' -ForegroundColor Yellow
 & npm.cmd install 2>&1 | ForEach-Object { if ($_ -notmatch '^npm warn') { Write-Host $_ } }
 Write-Host 'Dependencias instaladas!' -ForegroundColor Green
 
 # ============================================================
-# PASSO 5 - CONFIGURAR VARIAVEIS
+# PASSO 7 - CONFIGURAR VARIAVEIS
 # ============================================================
-Show-Step 5 'CONFIGURAR VARIAVEIS'
+Show-Step 7 'CONFIGURAR VARIAVEIS'
 
 $authSecret = -join ((48..57) + (97..122) | Get-Random -Count 32 | ForEach-Object { [char]$_ })
 
@@ -174,9 +205,9 @@ $envLines -join "`n" | Set-Content -Path (Join-Path $deployDir '.env') -Encoding
 Write-Host 'Arquivo .env criado!' -ForegroundColor Green
 
 # ============================================================
-# PASSO 6 - CONFIGURAR BANCO DE DADOS
+# PASSO 8 - CONFIGURAR BANCO DE DADOS
 # ============================================================
-Show-Step 6 'CONFIGURAR BANCO DE DADOS'
+Show-Step 8 'CONFIGURAR BANCO DE DADOS'
 
 Write-Host 'Gerando cliente Prisma...' -ForegroundColor Yellow
 & npx.cmd prisma generate 2>&1 | Out-Host
@@ -344,9 +375,9 @@ Remove-Item (Join-Path $deployDir 'import.sql') -Force -ErrorAction SilentlyCont
 Write-Host 'Banco de dados configurado!' -ForegroundColor Green
 
 # ============================================================
-# PASSO 7 - DEPLOY NA VERCEL
+# PASSO 9 - DEPLOY NA VERCEL
 # ============================================================
-Show-Step 7 'DEPLOY NA VERCEL'
+Show-Step 9 'DEPLOY NA VERCEL'
 
 Write-Host 'Agora vamos publicar o app na Vercel.' -ForegroundColor White
 Write-Host ''
@@ -365,17 +396,23 @@ if ($LASTEXITCODE -ne 0 -or -not $vercelUser) {
 
 Write-Host ''
 Write-Host 'Iniciando deploy...' -ForegroundColor Yellow
-Write-Host 'Observacao: na primeira execucao a Vercel ainda pode abrir' -ForegroundColor DarkGray
-Write-Host 'um assistente para criar ou vincular o projeto.' -ForegroundColor DarkGray
-Write-Host 'Quando perguntar, responda:' -ForegroundColor DarkGray
-Write-Host '  Set up and deploy? -> Y' -ForegroundColor DarkGray
-Write-Host '  Which scope? -> Escolha sua conta' -ForegroundColor DarkGray
-Write-Host '  Link to existing project? -> N' -ForegroundColor DarkGray
-Write-Host '  Project name? -> morangos' -ForegroundColor DarkGray
-Write-Host '  Directory? -> ./' -ForegroundColor DarkGray
-Write-Host '  Modify settings? -> N' -ForegroundColor DarkGray
-Write-Host ''
+Write-Host 'Tentando linkar o projeto automaticamente...' -ForegroundColor Yellow
+& npx.cmd vercel link --yes --project morangos 2>&1 | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    Write-Host 'Nao foi possivel linkar automaticamente.' -ForegroundColor Yellow
+    Write-Host 'A Vercel pode pedir algumas respostas na primeira execucao.' -ForegroundColor DarkGray
+    Write-Host ''
+    Write-Host 'Quando perguntar, responda:' -ForegroundColor DarkGray
+    Write-Host '  Set up and deploy? -> Y' -ForegroundColor DarkGray
+    Write-Host '  Which scope? -> Escolha sua conta' -ForegroundColor DarkGray
+    Write-Host '  Link to existing project? -> N' -ForegroundColor DarkGray
+    Write-Host '  Project name? -> morangos' -ForegroundColor DarkGray
+    Write-Host '  Directory? -> ./' -ForegroundColor DarkGray
+    Write-Host '  Modify settings? -> N' -ForegroundColor DarkGray
+}
 
+Write-Host ''
+Write-Host 'Fazendo deploy inicial...' -ForegroundColor Yellow
 & npx.cmd vercel --prod 2>&1 | Out-Host
 
 Write-Host ''
@@ -393,9 +430,9 @@ Write-Host 'Redeployando com as variaveis...' -ForegroundColor Yellow
 & npx.cmd vercel --prod --yes 2>&1 | Out-Host
 
 # ============================================================
-# PASSO 8 - GOOGLE MAPS (OPCIONAL)
+# PASSO 10 - GOOGLE MAPS (OPCIONAL)
 # ============================================================
-Show-Step 8 'GOOGLE MAPS (OPCIONAL)'
+Show-Step 10 'GOOGLE MAPS (OPCIONAL)'
 
 Write-Host 'O app usa o Google Maps para otimizar rotas de entrega.' -ForegroundColor White
 Write-Host 'Isso e opcional. O app funciona sem ele.' -ForegroundColor DarkGray
@@ -429,9 +466,9 @@ if ($configurarMaps -eq 'S' -or $configurarMaps -eq 's') {
 }
 
 # ============================================================
-# PASSO 9 - PRONTO!
+# PASSO 11 - PRONTO!
 # ============================================================
-Show-Step 9 'PRONTO!'
+Show-Step 11 'PRONTO!'
 
 Write-Host ''
 Write-Host '  ========================================' -ForegroundColor Green
