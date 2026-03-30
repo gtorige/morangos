@@ -58,6 +58,17 @@ function Invoke-CmdCapture($command) {
     }
 }
 
+function Find-FirstExistingPath($candidatePaths) {
+    foreach ($candidatePath in $candidatePaths) {
+        if (-not $candidatePath) { continue }
+        if (Test-Path $candidatePath) {
+            return (Resolve-Path $candidatePath).Path
+        }
+    }
+
+    return $null
+}
+
 function Ensure-DeployRepo($deployDir) {
     $repoUrl = 'https://github.com/gtorige/morangos.git'
     $branch = 'cloud'
@@ -508,10 +519,28 @@ run().catch((e) => {
 Set-Content -Path (Join-Path $deployDir 'seed-init-turso.js') -Value $seedInitTursoScript -Encoding UTF8
 
 # Verificar se existe banco local para importar
-$localDbPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'morangos\prisma\dev.db'
+$desktopPath = [Environment]::GetFolderPath('Desktop')
+$documentsPath = [Environment]::GetFolderPath('MyDocuments')
+$oneDrivePath = [Environment]::GetEnvironmentVariable('OneDrive')
+
+$localDbCandidates = @(
+    (Join-Path $desktopPath 'morangos\prisma\dev.db'),
+    (Join-Path $desktopPath 'Morangos\prisma\dev.db'),
+    (Join-Path $oneDrivePath 'Área de Trabalho\morangos\prisma\dev.db'),
+    (Join-Path $oneDrivePath 'Desktop\morangos\prisma\dev.db'),
+    (Join-Path $oneDrivePath 'Área de Trabalho\Morangos\prisma\dev.db'),
+    (Join-Path $oneDrivePath 'Desktop\Morangos\prisma\dev.db')
+)
+$localDbPath = Find-FirstExistingPath $localDbCandidates
+
 $backupDbPath = $null
-$safeBackupDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'MorangosBackups'
-if (Test-Path $safeBackupDir) {
+$safeBackupCandidates = @(
+    (Join-Path $documentsPath 'MorangosBackups'),
+    (Join-Path $oneDrivePath 'Documentos\MorangosBackups'),
+    (Join-Path $oneDrivePath 'Documents\MorangosBackups')
+)
+$safeBackupDir = Find-FirstExistingPath $safeBackupCandidates
+if ($safeBackupDir) {
     $latestBackup = Get-ChildItem $safeBackupDir -Filter 'dev_*.db' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($latestBackup) { $backupDbPath = $latestBackup.FullName }
 }
@@ -526,19 +555,19 @@ if ((Test-Path $localDbPath) -or $backupDbPath) {
 
     if (Test-Path $localDbPath) {
         $dbSize = [math]::Round((Get-Item $localDbPath).Length / 1KB)
-        Write-Host "  Banco local: Desktop\morangos\prisma\dev.db ($dbSize KB)" -ForegroundColor White
+        Write-Host "  Banco local: $localDbPath ($dbSize KB)" -ForegroundColor White
     }
     if ($backupDbPath) {
         $bkSize = [math]::Round((Get-Item $backupDbPath).Length / 1KB)
         $bkName = (Get-Item $backupDbPath).Name
-        Write-Host "  Backup: Documentos\MorangosBackups\$bkName ($bkSize KB)" -ForegroundColor White
+        Write-Host "  Backup: $backupDbPath ($bkSize KB)" -ForegroundColor White
     }
 
     Write-Host ''
     Write-Host '  Deseja importar os dados existentes para a nuvem?' -ForegroundColor White
     Write-Host '  (clientes, pedidos, produtos, contas, etc.)' -ForegroundColor DarkGray
     Write-Host ''
-    Write-Host '  [1] Sim, importar do banco local (Desktop\morangos)' -ForegroundColor White
+    Write-Host '  [1] Sim, importar do banco local encontrado automaticamente' -ForegroundColor White
     if ($backupDbPath) {
         Write-Host '  [2] Sim, importar do backup mais recente' -ForegroundColor White
     }
@@ -549,6 +578,19 @@ if ((Test-Path $localDbPath) -or $backupDbPath) {
 
     if ($importChoice -eq '1' -and (Test-Path $localDbPath)) { $sourceDb = $localDbPath }
     elseif ($importChoice -eq '2' -and $backupDbPath) { $sourceDb = $backupDbPath }
+}
+elseif ($desktopPath -or $oneDrivePath) {
+    Write-Host ''
+    Write-Host 'Nao encontrei automaticamente o banco local nem backup.' -ForegroundColor Yellow
+    Write-Host 'Se quiser importar seus dados existentes, cole o caminho completo do arquivo dev.db.' -ForegroundColor DarkGray
+    Write-Host 'Se preferir começar do zero, apenas pressione Enter.' -ForegroundColor DarkGray
+    Write-Host ''
+
+    $manualDbPath = Read-Host 'Caminho do banco local (opcional)'
+    if ($manualDbPath -and (Test-Path $manualDbPath)) {
+        $sourceDb = (Resolve-Path $manualDbPath).Path
+        Write-Host "Banco local encontrado manualmente: $sourceDb" -ForegroundColor Green
+    }
 }
 
 if ($sourceDb) {
