@@ -104,7 +104,21 @@ Write-Host 'Instalando dependencias...' -ForegroundColor Yellow
 Write-Host 'Dependencias atualizadas!' -ForegroundColor Green
 
 # ============================================================
-Show-Step 3 'MIGRAR SCHEMA DO BANCO TURSO'
+Show-Step 3 'CONFIGURAR VERCEL E OBTER CREDENCIAIS'
+
+# Linkar ao projeto Vercel se necessario
+if (-not (Test-Path (Join-Path $deployDir '.vercel'))) {
+    Write-Host 'Linkando ao projeto Vercel...' -ForegroundColor Yellow
+    & npx.cmd vercel link --project morangos --yes 2>&1 | Out-Host
+}
+
+# Puxar env vars de producao do Vercel
+Write-Host 'Obtendo variaveis de ambiente da Vercel...' -ForegroundColor Yellow
+& npx.cmd vercel env pull .env --environment production --yes 2>&1 | Out-Host
+Write-Host 'Credenciais obtidas!' -ForegroundColor Green
+
+# ============================================================
+Show-Step 4 'MIGRAR SCHEMA DO BANCO TURSO'
 
 Write-Host 'Gerando cliente Prisma...' -ForegroundColor Yellow
 & npx.cmd prisma generate 2>&1 | Out-Host
@@ -120,11 +134,59 @@ foreach ($line in $envContent -split "`n") {
 
 if (-not $tursoUrl -or -not $tursoToken) {
     Write-Host 'ERRO: TURSO_DATABASE_URL ou TURSO_AUTH_TOKEN nao encontrados no .env' -ForegroundColor Red
+    Write-Host 'Verifique se as variaveis estao configuradas no Vercel.' -ForegroundColor Yellow
     Read-Host 'Pressione Enter para fechar'
     exit 1
 }
 
 Write-Host "Banco Turso: $tursoUrl" -ForegroundColor DarkGray
+
+# Backup do banco antes de migrar
+$backupDir = Join-Path $deployDir 'backups'
+if (-not (Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
+$backupFile = Join-Path $backupDir "turso-backup-$(Get-Date -Format 'yyyyMMdd-HHmmss').sql"
+Write-Host "Criando backup do banco em $backupFile..." -ForegroundColor Yellow
+
+$backupScript = @'
+const _of = globalThis.fetch;
+globalThis.fetch = async (u, o) => {
+  if (typeof u === 'string' && u.includes('/v1/jobs')) return new Response('', { status: 404 });
+  return _of.call(globalThis, u, o);
+};
+require('dotenv').config();
+const { createClient } = require('@libsql/client');
+const fs = require('fs');
+const client = createClient({ url: process.env.TURSO_DATABASE_URL, authToken: process.env.TURSO_AUTH_TOKEN });
+async function backup() {
+  const tables = await client.execute("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_prisma%'");
+  let sql = '-- Backup Turso ' + new Date().toISOString() + '\n\n';
+  for (const t of tables.rows) {
+    sql += t.sql + ';\n';
+    const rows = await client.execute('SELECT * FROM "' + t.name + '"');
+    for (const row of rows.rows) {
+      const vals = Object.values(row).map(v => v === null ? 'NULL' : typeof v === 'string' ? "'" + v.replace(/'/g, "''") + "'" : v);
+      sql += 'INSERT INTO "' + t.name + '" VALUES (' + vals.join(',') + ');\n';
+    }
+    sql += '\n';
+  }
+  fs.writeFileSync(process.argv[2], sql, 'utf8');
+  console.log('Backup: ' + tables.rows.length + ' tabelas exportadas');
+}
+backup().then(() => process.exit(0)).catch(e => { console.error('Erro no backup:', e.message); process.exit(1); });
+'@
+
+$backupPath = Join-Path $deployDir '_backup-turso.js'
+[System.IO.File]::WriteAllText($backupPath, $backupScript, (New-Object System.Text.UTF8Encoding($false)))
+& node.exe $backupPath $backupFile 2>&1 | Out-Host
+$backupExit = $LASTEXITCODE
+Remove-Item $backupPath -Force -ErrorAction SilentlyContinue
+
+if ($backupExit -ne 0) {
+    Write-Host 'AVISO: Backup falhou, mas continuando com a migracao...' -ForegroundColor Yellow
+} else {
+    Write-Host "Backup salvo em: $backupFile" -ForegroundColor Green
+}
+
 Write-Host ''
 Write-Host 'Aplicando schema incremental no Turso...' -ForegroundColor Yellow
 Write-Host '(Adiciona colunas e tabelas novas sem apagar dados existentes)' -ForegroundColor DarkGray
@@ -132,6 +194,14 @@ Write-Host '(Adiciona colunas e tabelas novas sem apagar dados existentes)' -For
 # Script Node.js para migration incremental
 $migrateScript = @'
 require("dotenv").config();
+// Fetch shim for Turso AWS /v1/jobs probe bug
+const _of = globalThis.fetch;
+globalThis.fetch = async (u, o) => {
+  const s = typeof u === 'string' ? u : '';
+  if (s.includes('/v1/jobs')) return new Response('', { status: 404 });
+  return _of.call(globalThis, u, o);
+};
+
 const { createClient } = require("@libsql/client");
 
 const client = createClient({
@@ -248,7 +318,7 @@ if ($migrateExit -ne 0) {
 Write-Host 'Schema atualizado!' -ForegroundColor Green
 
 # ============================================================
-Show-Step 4 'DEPLOY NA VERCEL'
+Show-Step 5 'DEPLOY NA VERCEL'
 
 Write-Host 'Publicando nova versao...' -ForegroundColor Yellow
 $deployExit = Invoke-CmdPassthru 'npx vercel --prod --yes'

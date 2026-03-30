@@ -33,7 +33,7 @@ model Produto {
   pesoUnitarioGramas Float?       @map("peso_unitario_gramas")
   estoqueMinimo      Int          @default(0) @map("estoque_minimo")
   estoqueAtual       Int          @default(0) @map("estoque_atual")
-  unidadeVenda       String       @default("bandeja") @map("unidade_venda")
+  unidadeVenda       String       @default("unidade") @map("unidade_venda")
   promocoes          Promocao[]
   itens              PedidoItem[]
   itensRecorrentes   PedidoRecorrenteItem[]
