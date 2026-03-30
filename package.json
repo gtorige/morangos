@@ -17,8 +17,8 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
-    "@libsql/client": "^0.17.2",
-    "@prisma/adapter-libsql": "^7.6.0",
+    "@libsql/client": "^0.6.2",
+    "@prisma/adapter-libsql": "^5.22.0",
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.8.0",
