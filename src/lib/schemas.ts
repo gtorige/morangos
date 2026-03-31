@@ -141,7 +141,20 @@ export const contaCreateSchema = z.object({
   parcelaGrupoId: z.number().int().positive().optional().nullable(),
 });
 
-export const contaUpdateSchema = contaCreateSchema.partial();
+export const contaUpdateSchema = z.object({
+  fornecedorId: z.number().int().positive().optional().nullable(),
+  fornecedorNome: str(200).optional(),
+  categoria: str(100).optional(),
+  categoriaId: z.number().int().positive().optional().nullable(),
+  subcategoriaId: z.number().int().positive().optional().nullable(),
+  tipoFinanceiro: str(50).optional(),
+  valor: z.number().optional(),
+  vencimento: dateStr().optional(),
+  situacao: str(50).optional(),
+  parcelas: z.number().int().min(1).optional(),
+  parcelaNumero: z.number().int().min(1).optional(),
+  parcelaGrupoId: z.number().int().positive().optional().nullable(),
+});
 
 // ─── Fornecedor ─────────────────────────────────────────────────────────
 
