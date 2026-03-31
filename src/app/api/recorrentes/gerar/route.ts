@@ -43,12 +43,15 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const itens = rec.itens.map((item) => ({
-        produtoId: item.produtoId,
-        quantidade: item.quantidade,
-        precoUnitario: item.produto.preco,
-        subtotal: item.produto.preco * item.quantidade,
-      }));
+      const itens = rec.itens.map((item) => {
+        const preco = item.precoManual ?? item.produto.preco;
+        return {
+          produtoId: item.produtoId,
+          quantidade: item.quantidade,
+          precoUnitario: preco,
+          subtotal: preco * item.quantidade,
+        };
+      });
 
       const totalItens = itens.reduce((a, i) => a + i.subtotal, 0);
       const total = totalItens + rec.taxaEntrega;

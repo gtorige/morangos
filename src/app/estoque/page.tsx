@@ -184,6 +184,9 @@ export default function EstoquePage() {
     try {
       const params = new URLSearchParams({ limit: "100" });
       if (filtroTipo !== "todos") params.set("tipo", filtroTipo);
+      if (filtroDataDe) params.set("dataDe", filtroDataDe);
+      if (filtroDataAte) params.set("dataAte", filtroDataAte);
+      if (filtroProdutoId) params.set("produtoId", filtroProdutoId);
       const res = await fetch(`/api/movimentacoes?${params}`);
       if (!res.ok) return;
       const data = await res.json();
@@ -191,7 +194,7 @@ export default function EstoquePage() {
     } catch (err) {
       console.error("Erro ao buscar movimentacoes:", err);
     }
-  }, [filtroTipo]);
+  }, [filtroTipo, filtroDataDe, filtroDataAte, filtroProdutoId]);
 
   const fetchProdutos = useCallback(async () => {
     try {

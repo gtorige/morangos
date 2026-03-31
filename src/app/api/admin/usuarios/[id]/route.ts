@@ -7,79 +7,89 @@ export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  const currentUser = session?.user as { id?: string; isAdmin?: boolean };
+  try {
+    const session = await auth();
+    const currentUser = session?.user as { id?: string; isAdmin?: boolean };
 
-  const { id } = await params;
-  const idNum = parseInt(id);
+    const { id } = await params;
+    const idNum = parseInt(id);
 
-  if (isNaN(idNum)) {
-    return NextResponse.json({ error: "ID inválido." }, { status: 400 });
-  }
+    if (isNaN(idNum)) {
+      return NextResponse.json({ error: "ID inválido." }, { status: 400 });
+    }
 
-  // Users can change their own password, admins can change anyone's
-  if (String(idNum) !== currentUser?.id && !currentUser?.isAdmin) {
-    return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
-  }
+    // Users can change their own password, admins can change anyone's
+    if (String(idNum) !== currentUser?.id && !currentUser?.isAdmin) {
+      return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+    }
 
-  const body = await request.json();
-  const { senha, senhaAtual } = body;
+    const body = await request.json();
+    const { senha, senhaAtual } = body;
 
-  if (!senha || senha.length < 4) {
-    return NextResponse.json(
-      { error: "Nova senha deve ter pelo menos 4 caracteres." },
-      { status: 400 }
-    );
-  }
-
-  // If changing own password, require current password
-  if (String(idNum) === currentUser?.id && !currentUser?.isAdmin) {
-    if (!senhaAtual) {
+    if (!senha || senha.length < 4) {
       return NextResponse.json(
-        { error: "Senha atual é obrigatória." },
+        { error: "Nova senha deve ter pelo menos 4 caracteres." },
         { status: 400 }
       );
     }
-    const user = await prisma.usuario.findUnique({ where: { id: idNum } });
-    if (!user || !(await bcrypt.compare(senhaAtual, user.senha))) {
-      return NextResponse.json(
-        { error: "Senha atual incorreta." },
-        { status: 400 }
-      );
+
+    // Require current password when changing own password
+    if (String(idNum) === currentUser?.id) {
+      if (!senhaAtual) {
+        return NextResponse.json(
+          { error: "Senha atual é obrigatória." },
+          { status: 400 }
+        );
+      }
+      const user = await prisma.usuario.findUnique({ where: { id: idNum } });
+      if (!user || !(await bcrypt.compare(senhaAtual, user.senha))) {
+        return NextResponse.json(
+          { error: "Senha atual incorreta." },
+          { status: 400 }
+        );
+      }
     }
+
+    const hash = await bcrypt.hash(senha, 10);
+    await prisma.usuario.update({ where: { id: idNum }, data: { senha: hash } });
+
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    console.error("Erro ao atualizar usuário:", e);
+    return NextResponse.json({ error: "Erro interno do servidor" }, { status: 500 });
   }
-
-  const hash = await bcrypt.hash(senha, 10);
-  await prisma.usuario.update({ where: { id: idNum }, data: { senha: hash } });
-
-  return NextResponse.json({ success: true });
 }
 
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  const currentUser = session?.user as { id?: string; isAdmin?: boolean };
+  try {
+    const session = await auth();
+    const currentUser = session?.user as { id?: string; isAdmin?: boolean };
 
-  if (!currentUser?.isAdmin) {
-    return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+    if (!currentUser?.isAdmin) {
+      return NextResponse.json({ error: "Acesso negado." }, { status: 403 });
+    }
+
+    const { id } = await params;
+    const idNum = parseInt(id);
+
+    if (isNaN(idNum)) {
+      return NextResponse.json({ error: "ID inválido." }, { status: 400 });
+    }
+
+    if (String(idNum) === currentUser.id) {
+      return NextResponse.json(
+        { error: "Você não pode excluir seu próprio usuário." },
+        { status: 400 }
+      );
+    }
+
+    await prisma.usuario.delete({ where: { id: idNum } });
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    console.error("Erro ao excluir usuário:", e);
+    return NextResponse.json({ error: "Erro interno do servidor" }, { status: 500 });
   }
-
-  const { id } = await params;
-  const idNum = parseInt(id);
-
-  if (isNaN(idNum)) {
-    return NextResponse.json({ error: "ID inválido." }, { status: 400 });
-  }
-
-  if (String(idNum) === currentUser.id) {
-    return NextResponse.json(
-      { error: "Você não pode excluir seu próprio usuário." },
-      { status: 400 }
-    );
-  }
-
-  await prisma.usuario.delete({ where: { id: idNum } });
-  return NextResponse.json({ success: true });
 }
