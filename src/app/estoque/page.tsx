@@ -239,7 +239,8 @@ export default function EstoquePage() {
   );
   const congelarQtd = parseFloat(congelarForm.quantidadeKg) || 0;
   const congelarPesoKgUn = congelarProdutoCongelado?.pesoUnitarioGramas ? congelarProdutoCongelado.pesoUnitarioGramas / 1000 : 1;
-  const congelarUnidades = Math.floor(congelarQtd / congelarPesoKgUn);
+  const congelarPerda = parseFloat(congelarForm.perdaKg) || 0;
+  const congelarUnidades = Math.floor((congelarQtd - congelarPerda) / congelarPesoKgUn);
 
   // ── Handlers ──
 
@@ -881,12 +882,17 @@ export default function EstoquePage() {
                 className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
                 required
               >
-                <option value="">Selecione o produto fresco</option>
-                {produtosFrescos.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nome}
-                  </option>
-                ))}
+                <option value="">Selecione a classe</option>
+                {(() => {
+                  // Group by classe, show one option per class
+                  const classeMap = new Map<string, Produto>();
+                  for (const p of produtosFrescos) {
+                    if (p.classe && !classeMap.has(p.classe)) classeMap.set(p.classe, p);
+                  }
+                  return [...classeMap.entries()].sort(([a],[b]) => a.localeCompare(b)).map(([cls, p]) => (
+                    <option key={cls} value={p.id}>Morango Classe {cls}</option>
+                  ));
+                })()}
               </select>
             </div>
 

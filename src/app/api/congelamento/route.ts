@@ -21,11 +21,13 @@ export async function POST(request: NextRequest) {
       throw new ApiError("Produto congelado deve ser do tipo 'estoque'.", 400);
     }
 
-    // Calcular unidades congeladas
+    // Calcular unidades congeladas (descontando perda)
     const pesoKgPorUnidade = congelado.pesoUnitarioGramas ? congelado.pesoUnitarioGramas / 1000 : 1;
-    const unidadesCongeladas = Math.floor(body.quantidadeKg / pesoKgPorUnidade);
+    const perdaKg = body.perdaKg || 0;
+    const kgUtil = body.quantidadeKg - perdaKg;
+    const unidadesCongeladas = Math.floor(kgUtil / pesoKgPorUnidade);
     if (unidadesCongeladas <= 0) {
-      throw new ApiError("Quantidade insuficiente para gerar pelo menos 1 unidade congelada.", 400);
+      throw new ApiError("Quantidade insuficiente para gerar pelo menos 1 unidade congelada (após descontar perda).", 400);
     }
 
     // Gerar número de lote sequencial
