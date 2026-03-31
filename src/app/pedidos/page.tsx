@@ -123,7 +123,7 @@ const COLUNAS_DEFAULT: { key: ColKey; label: string; defaultVisible?: boolean }[
   { key: 'data', label: 'Data' },
 ];
 
-type PeriodoKey = "ontem" | "hoje" | "semana" | "prox_semana" | "mes" | "ultimos7" | "todos";
+type PeriodoKey = "ontem" | "hoje" | "semana" | "prox_semana" | "mes" | "ultimos7" | "todos" | "custom";
 type StatusTab = "todos" | "concluidos" | "pendente_pgto" | "pendente_tudo";
 type SortField = "id" | "cliente" | "bairro" | "total" | "pgto" | "formaPgto" | "entrega" | "data";
 type SortDir = "asc" | "desc";
@@ -158,6 +158,7 @@ function getPeriodoDates(key: PeriodoKey): { dataInicio: string; dataFim: string
       return { dataInicio: dateToStr(start), dataFim: dateToStr(end) };
     }
     case "todos":
+    case "custom":
       return { dataInicio: "", dataFim: "" };
   }
 }
@@ -1231,6 +1232,7 @@ function PedidosPageInner() {
           { key: "mes" as PeriodoKey, label: "Mês" },
           { key: "ultimos7" as PeriodoKey, label: "Últimos 7 dias" },
           { key: "todos" as PeriodoKey, label: "Todos" },
+          { key: "custom" as PeriodoKey, label: "Custom" },
         ]).map((s) => (
           <Button
             key={s.key}
@@ -1246,10 +1248,17 @@ function PedidosPageInner() {
             {s.label}
           </Button>
         ))}
-        {filters.dataInicio && (
+        {periodo !== "custom" && filters.dataInicio && (
           <span className="text-xs text-muted-foreground self-center ml-1">
             {formatDate(filters.dataInicio)}{filters.dataFim && filters.dataInicio !== filters.dataFim ? ` a ${formatDate(filters.dataFim)}` : ""}
           </span>
+        )}
+        {periodo === "custom" && (
+          <div className="flex items-center gap-1.5">
+            <Input type="date" value={filters.dataInicio} onChange={(e) => setFilters(f => ({ ...f, dataInicio: e.target.value }))} className="w-32 h-7 text-xs" />
+            <span className="text-xs text-muted-foreground">a</span>
+            <Input type="date" value={filters.dataFim} onChange={(e) => setFilters(f => ({ ...f, dataFim: e.target.value }))} className="w-32 h-7 text-xs" />
+          </div>
         )}
       </div>
 
