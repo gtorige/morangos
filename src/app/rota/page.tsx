@@ -420,10 +420,15 @@ export default function RotaPage() {
         .filter(Boolean);
       setPedidos(reorderedPedidos);
 
-      // Fetch embed map URL from server
+      // Fetch embed map URL from server (include paradas in waypoints)
       const originEnc = encodeURIComponent(enderecoSalvo);
-      const wps = reorderedPedidos
-        .map((p: Pedido) => encodeURIComponent(buildAddress(p.cliente)))
+      const wps = novaLista
+        .map((item) => {
+          if (item.type === "pedido") return encodeURIComponent(buildAddress(item.data.cliente));
+          if (item.data.endereco?.trim()) return encodeURIComponent(item.data.endereco.trim());
+          return null;
+        })
+        .filter(Boolean)
         .join("|");
       const mapRes = await fetch(`/api/rota/mapa?origin=${originEnc}&destination=${originEnc}&waypoints=${wps}`);
       let mapUrl = "";
