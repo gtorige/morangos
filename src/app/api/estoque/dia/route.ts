@@ -54,12 +54,25 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Saídas manuais do dia (congelamento, descarte, consumo) para diários
+    const saidasDiarias = await prisma.movimentacaoEstoque.findMany({
+      where: { data, tipo: { in: ["congelamento", "descarte", "consumo"] } },
+    });
+    const saidaManualMap = new Map<number, number>();
+    for (const mov of saidasDiarias) {
+      const prod = produtoMap.get(mov.produtoId);
+      if (prod?.tipoEstoque === "diario") {
+        saidaManualMap.set(mov.produtoId, (saidaManualMap.get(mov.produtoId) || 0) + Math.abs(mov.quantidade));
+      }
+    }
+
     const estoque = produtos.map((prod) => {
       if (prod.tipoEstoque === "diario") {
         const colhido = colheitaMap.get(prod.id) || 0;
         const vendido = vendidoMap.get(prod.id) || 0;
         const reservado = reservadoMap.get(prod.id) || 0;
-        const disponivel = colhido - vendido - reservado;
+        const saidaManual = saidaManualMap.get(prod.id) || 0;
+        const disponivel = colhido - vendido - reservado - saidaManual;
         return {
           produtoId: prod.id,
           nome: prod.nome,
