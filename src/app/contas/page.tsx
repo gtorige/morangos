@@ -531,6 +531,14 @@ function ContasPage() {
 
   async function handleContaSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!contaForm.fornecedorNome) {
+      alert("Selecione um fornecedor.");
+      return;
+    }
+    if (!contaForm.valor || !contaForm.vencimento) {
+      alert("Preencha valor e vencimento.");
+      return;
+    }
     const catId = contaForm.categoriaId ? Number(contaForm.categoriaId) : null;
     const catNome = catId ? (categorias.find((c) => c.id === catId)?.nome ?? "") : "";
     const totalParcelas = parseInt(contaForm.parcelas) || 1;
