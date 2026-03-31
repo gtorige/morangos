@@ -58,6 +58,7 @@ export interface EstoqueDia {
   tipoEstoque: string;
   colhidoHoje?: number;
   vendidoHoje?: number;
+  reservadoHoje?: number;
   estoqueAtual?: number;
   estoqueMinimo?: number;
   disponivel: number;

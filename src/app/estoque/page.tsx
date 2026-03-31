@@ -544,11 +544,11 @@ export default function EstoquePage() {
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right tabular-nums">
-                                {item.disponivel.toFixed(1)} kg
+                                <span className={item.disponivel > 0 ? "text-green-500" : item.disponivel < 0 ? "text-red-500" : ""}>{item.disponivel.toFixed(1)} kg</span>
                                 <span className="block text-[10px] text-muted-foreground">
                                   {(item.colhidoHoje ?? 0).toFixed(1)} colhido
-                                  {" - "}
-                                  {(item.vendidoHoje ?? 0).toFixed(1)} vendido
+                                  {(item.vendidoHoje ?? 0) > 0 && ` - ${(item.vendidoHoje ?? 0).toFixed(1)} vendido`}
+                                  {(item.reservadoHoje ?? 0) > 0 && ` - ${(item.reservadoHoje ?? 0).toFixed(1)} reservado`}
                                 </span>
                               </TableCell>
                               <TableCell className="hidden md:table-cell text-right text-muted-foreground">
