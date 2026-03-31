@@ -36,7 +36,7 @@ export const clienteUpdateSchema = clienteCreateSchema.partial();
 // ─── Produto ────────────────────────────────────────────────────────────
 
 export const tipoEstoque = z.enum(["diario", "estoque"]);
-export const unidadeVenda = z.enum(["unidade", "kg", "caixa", "unidade"]);
+export const unidadeVenda = z.enum(["unidade", "kg", "caixa", "bandeja"]);
 
 export const produtoCreateSchema = z.object({
   nome: reqStr(200),

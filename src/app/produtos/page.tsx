@@ -34,7 +34,7 @@ const emptyForm = {
   pesoUnitarioGramas: "",
   estoqueMinimo: "0",
   estoqueAtual: "0",
-  unidadeVenda: "bandeja",
+  unidadeVenda: "unidade",
 };
 
 export default function ProdutosPage() {
@@ -73,7 +73,7 @@ export default function ProdutosPage() {
       pesoUnitarioGramas: produto.pesoUnitarioGramas ? String(produto.pesoUnitarioGramas) : "",
       estoqueMinimo: String(produto.estoqueMinimo || 0),
       estoqueAtual: String(produto.estoqueAtual || 0),
-      unidadeVenda: produto.unidadeVenda || "bandeja",
+      unidadeVenda: produto.unidadeVenda || "unidade",
     });
     setDialogOpen(true);
   }
