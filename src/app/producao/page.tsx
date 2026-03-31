@@ -35,7 +35,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { todayStr, formatDate, addDays } from "@/lib/formatting";
-import { extrairClasseDoNome } from "@/lib/produto-utils";
+// classe agora vem do campo produto.classe (não mais extraído do nome)
 import type { Produto, Colheita, Pedido } from "@/lib/types";
 
 // ── Types ──
