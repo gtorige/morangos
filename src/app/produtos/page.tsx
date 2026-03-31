@@ -30,6 +30,7 @@ import type { Produto } from "@/lib/types";
 const emptyForm = {
   nome: "",
   preco: "",
+  classe: "" as string,
   tipoEstoque: "diario" as "diario" | "estoque",
   pesoUnitarioGramas: "",
   estoqueMinimo: "0",
@@ -69,6 +70,7 @@ export default function ProdutosPage() {
     setForm({
       nome: produto.nome,
       preco: String(produto.preco),
+      classe: produto.classe || "",
       tipoEstoque: (produto.tipoEstoque || "diario") as "diario" | "estoque",
       pesoUnitarioGramas: produto.pesoUnitarioGramas ? String(produto.pesoUnitarioGramas) : "",
       estoqueMinimo: String(produto.estoqueMinimo || 0),
@@ -100,6 +102,7 @@ export default function ProdutosPage() {
     const payload = {
       nome: form.nome,
       preco: parseFloat(form.preco),
+      classe: form.classe || null,
       tipoEstoque: form.tipoEstoque,
       pesoUnitarioGramas: form.pesoUnitarioGramas ? parseFloat(form.pesoUnitarioGramas) : null,
       estoqueMinimo: parseInt(form.estoqueMinimo) || 0,
@@ -177,7 +180,7 @@ export default function ProdutosPage() {
   function exportCSV() {
     const header = 'Nome;Preco;Tipo;Classe;Peso (g);Est. Mínimo';
     const rows = produtos.map(p => {
-      const classe = extrairClasseDoNome(p.nome) || "";
+      const classe = p.classe || "";
       return '"' + p.nome.replace(/"/g, '""') + '";' + p.preco.toFixed(2).replace('.', ',') + ';' + p.tipoEstoque + ';' + classe + ';' + (p.pesoUnitarioGramas || '') + ';' + (p.tipoEstoque === "estoque" ? p.estoqueMinimo : '');
     });
     const csv = [header, ...rows].join('\n');
@@ -265,8 +268,23 @@ export default function ProdutosPage() {
               {form.tipoEstoque === "diario" && (
                 <div className="space-y-3 border-t border-border pt-3">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Configuração — Fresco</p>
-                  <div className="space-y-2">
-                    <Label htmlFor="peso">Peso por unidade (gramas)</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="classe">Classe</Label>
+                      <select
+                        id="classe"
+                        value={form.classe}
+                        onChange={(e) => setForm({ ...form, classe: e.target.value })}
+                        className="flex h-9 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+                      >
+                        <option value="">—</option>
+                        <option value="A">A</option>
+                        <option value="B">B</option>
+                        <option value="C">C</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="peso">Peso por unidade (g)</Label>
                     <Input
                       id="peso"
                       type="number"
@@ -277,6 +295,7 @@ export default function ProdutosPage() {
                       placeholder="Ex: 500"
                     />
                     {form.pesoUnitarioGramas && <p className="text-[10px] text-muted-foreground">{(parseFloat(form.pesoUnitarioGramas) / 1000).toFixed(3)} kg/un</p>}
+                    </div>
                   </div>
                 </div>
               )}
@@ -387,7 +406,7 @@ function ProdutoRow({ produto, onEdit, onDelete, editingCell, editingValue, setE
   setEditingValue: (v: string) => void;
   saveInlineEdit: (id: number, field: string, value: string) => void;
 }) {
-  const classe = extrairClasseDoNome(produto.nome);
+  const classe = produto.classe;
   const pesoKg = produto.pesoUnitarioGramas ? (produto.pesoUnitarioGramas / 1000).toFixed(3) : null;
 
   return (

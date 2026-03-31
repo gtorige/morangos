@@ -29,6 +29,7 @@ model Produto {
   id                 Int          @id @default(autoincrement())
   nome               String
   preco              Float
+  classe             String?
   tipoEstoque        String       @default("diario") @map("tipo_estoque")
   pesoUnitarioGramas Float?       @map("peso_unitario_gramas")
   estoqueMinimo      Int          @default(0) @map("estoque_minimo")

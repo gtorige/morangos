@@ -38,9 +38,12 @@ export const clienteUpdateSchema = clienteCreateSchema.partial();
 export const tipoEstoque = z.enum(["diario", "estoque"]);
 export const unidadeVenda = z.enum(["unidade", "kg", "caixa", "bandeja"]);
 
+export const classeEnum = z.enum(["A", "B", "C"]);
+
 export const produtoCreateSchema = z.object({
   nome: reqStr(200),
   preco: posFloat(),
+  classe: classeEnum.optional().nullable(),
   tipoEstoque: tipoEstoque.optional().default("diario"),
   pesoUnitarioGramas: z.number().min(0).optional().nullable(),
   estoqueMinimo: z.number().int().min(0).optional().default(0),
