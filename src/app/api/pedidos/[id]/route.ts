@@ -39,11 +39,19 @@ export async function PUT(
     const { itens, ...pedidoData } = body;
 
     if (itens) {
-      const total = itens.reduce(
+      const itensTotal = itens.reduce(
         (acc, item) =>
           acc + (item.subtotal ?? item.precoUnitario! * item.quantidade),
         0
       );
+
+      // Incluir taxaEntrega no total (do body ou do pedido existente)
+      let taxaEntrega = pedidoData.taxaEntrega;
+      if (taxaEntrega === undefined) {
+        const existing = await prisma.pedido.findUnique({ where: { id: idNum }, select: { taxaEntrega: true } });
+        taxaEntrega = existing?.taxaEntrega ?? 0;
+      }
+      const total = itensTotal + taxaEntrega;
 
       const pedido = await prisma.$transaction(async (tx) => {
         await tx.pedidoItem.deleteMany({

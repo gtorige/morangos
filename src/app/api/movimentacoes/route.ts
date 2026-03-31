@@ -69,11 +69,19 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const tipo = searchParams.get("tipo");
     const produtoId = searchParams.get("produtoId");
+    const dataDe = searchParams.get("dataDe");
+    const dataAte = searchParams.get("dataAte");
     const limit = Math.min(parseInt(searchParams.get("limit") || "100"), 500);
 
     const where: Record<string, unknown> = {};
     if (tipo && tipo !== "todos") where.tipo = tipo;
     if (produtoId) where.produtoId = parseInt(produtoId);
+    if (dataDe || dataAte) {
+      where.data = {
+        ...(dataDe ? { gte: dataDe } : {}),
+        ...(dataAte ? { lte: dataAte } : {}),
+      };
+    }
 
     const movimentacoes = await prisma.movimentacaoEstoque.findMany({
       where,

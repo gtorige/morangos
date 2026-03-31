@@ -643,7 +643,7 @@ export default function RecorrentesPage() {
               <Input
                 placeholder="Buscar cliente..."
                 value={clienteBusca}
-                onChange={(e) => { setClienteBusca(e.target.value); setClienteDropdownOpen(true) }}
+                onChange={(e) => { setClienteBusca(e.target.value); if (!e.target.value) setClienteId(""); setClienteDropdownOpen(true) }}
                 onFocus={() => setClienteDropdownOpen(true)}
               />
               {clienteDropdownOpen && filteredClientes.length > 0 && (

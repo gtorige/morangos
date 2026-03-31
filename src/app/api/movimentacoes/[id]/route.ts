@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { withAuth, parseId, ApiError } from "@/lib/api-helpers";
+import { withAuth, parseId, parseBody, ApiError } from "@/lib/api-helpers";
+
+const movimentacaoUpdateSchema = z.object({
+  quantidade: z.number().optional(),
+  motivo: z.string().max(500).optional(),
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
 
 /** PUT — Editar movimentação (quantidade, motivo, data) */
 export async function PUT(
@@ -10,7 +17,7 @@ export async function PUT(
   return withAuth(async () => {
     const { id } = await params;
     const idNum = parseId(id);
-    const body = await request.json();
+    const body = await parseBody(request, movimentacaoUpdateSchema);
 
     const mov = await prisma.movimentacaoEstoque.findUnique({
       where: { id: idNum },
@@ -20,17 +27,19 @@ export async function PUT(
 
     // Calcular diferença para ajustar estoque
     const oldQty = mov.quantidade;
-    const newQty = body.quantidade !== undefined ? Number(body.quantidade) : oldQty;
+    const newQty = body.quantidade !== undefined ? body.quantidade : oldQty;
     const diff = newQty - oldQty;
 
     const result = await prisma.$transaction(async (tx) => {
+      // Recalcular saldoFinal baseado no saldoInicial original
+      const saldoFinal = mov.saldoInicial + newQty;
+
       const updated = await tx.movimentacaoEstoque.update({
         where: { id: idNum },
         data: {
-          ...(body.quantidade !== undefined && { quantidade: newQty }),
+          ...(body.quantidade !== undefined && { quantidade: newQty, saldoFinal }),
           ...(body.motivo !== undefined && { motivo: body.motivo }),
           ...(body.data !== undefined && { data: body.data }),
-          ...(body.saldoFinal !== undefined && { saldoFinal: body.saldoFinal }),
         },
         include: { produto: true },
       });

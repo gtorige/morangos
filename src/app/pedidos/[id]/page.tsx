@@ -182,8 +182,24 @@ export default function EditarPedidoPage() {
       )
     : clientes;
 
-  function getPromocaoForProduto(produtoId: string): Promocao | undefined {
-    return promocoes.find((p) => String(p.produtoId) === produtoId);
+  function getPromocaoForProduto(produtoId: string, quantidade?: number): Promocao | undefined {
+    const promos = promocoes.filter((p) => String(p.produtoId) === produtoId);
+    if (promos.length === 0) return undefined;
+
+    // For quantidade_minima: find the best matching tier
+    if (quantidade != null) {
+      const bestQtdMin = promos
+        .filter((p) => p.tipo === "quantidade_minima" && p.quantidadeMinima != null && quantidade >= p.quantidadeMinima)
+        .sort((a, b) => (b.quantidadeMinima ?? 0) - (a.quantidadeMinima ?? 0))[0];
+      if (bestQtdMin) return bestQtdMin;
+    }
+
+    const priorityOrder = ["desconto", "leve_x_pague_y"];
+    for (const tipo of priorityOrder) {
+      const found = promos.find((p) => p.tipo === tipo);
+      if (found) return found;
+    }
+    return undefined;
   }
 
   // Close product dropdowns on outside click
@@ -250,9 +266,9 @@ export default function EditarPedidoPage() {
 
   function calcSubtotal(item: ItemPedido): { subtotal: number; qtdCobrada: number | null } {
     const qty = parseFloat(item.quantidade || "0");
-    const promo = !item.precoManual ? getPromocaoForProduto(item.produtoId) : undefined;
+    const promo = !item.precoManual ? getPromocaoForProduto(item.produtoId, qty) : undefined;
     const tipo = promo ? (promo.tipo || "desconto") : undefined;
-    const subtotal = calcSubtotalBase(qty, item.precoUnitario, tipo, promo?.leveQuantidade, promo?.pagueQuantidade);
+    const subtotal = calcSubtotalBase(qty, item.precoUnitario, tipo, promo?.leveQuantidade, promo?.pagueQuantidade, promo?.quantidadeMinima, promo?.precoPromocional);
     const plainSubtotal = item.precoUnitario * qty;
     const qtdCobrada = subtotal !== plainSubtotal ? Math.round((subtotal / item.precoUnitario) * 100) / 100 : null;
     return { subtotal, qtdCobrada };
@@ -297,6 +313,18 @@ export default function EditarPedidoPage() {
       }
     } else if (field === "quantidade") {
       item.quantidade = value;
+      if (!item.precoManual) {
+        const qty = parseFloat(value) || 0;
+        const produto = produtos.find((p) => String(p.id) === item.produtoId);
+        const promo = getPromocaoForProduto(item.produtoId, qty);
+        if (promo && promo.tipo === "quantidade_minima" && promo.quantidadeMinima && promo.precoPromocional && qty >= promo.quantidadeMinima) {
+          item.precoUnitario = promo.precoPromocional;
+        } else if (promo && promo.tipo === "desconto" && promo.precoPromocional) {
+          item.precoUnitario = promo.precoPromocional;
+        } else {
+          item.precoUnitario = produto?.preco ?? item.precoUnitario;
+        }
+      }
       const { subtotal } = calcSubtotalFor(item);
       item.subtotal = subtotal;
     } else if (field === "precoUnitario") {
@@ -415,6 +443,7 @@ export default function EditarPedidoPage() {
                 value={clienteBusca}
                 onChange={(e) => {
                   setClienteBusca(e.target.value);
+                  if (!e.target.value) setClienteId("");
                   setClienteDropdownOpen(true);
                 }}
                 onFocus={() => setClienteDropdownOpen(true)}

@@ -497,7 +497,7 @@ export function NovoPedidoSheet({ open, onOpenChange, onSuccess, initialData }: 
                     id="np-cliente-busca"
                     placeholder="Digite o nome do cliente..."
                     value={clienteBusca}
-                    onChange={(e) => { setClienteBusca(e.target.value); setClienteDropdownOpen(true); }}
+                    onChange={(e) => { setClienteBusca(e.target.value); if (!e.target.value) setClienteId(""); setClienteDropdownOpen(true); }}
                     onFocus={() => setClienteDropdownOpen(true)}
                     autoComplete="off"
                   />

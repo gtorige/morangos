@@ -484,6 +484,7 @@ export default function NovoPedidoPage() {
                 value={clienteBusca}
                 onChange={(e) => {
                   setClienteBusca(e.target.value);
+                  if (!e.target.value) setClienteId("");
                   setClienteDropdownOpen(true);
                 }}
                 onFocus={() => setClienteDropdownOpen(true)}
