@@ -44,17 +44,27 @@ export async function POST(request: NextRequest) {
           data: { quantidade: body.quantidade, observacao: body.observacao ?? existing.observacao },
           include: { produto: true },
         });
-        // Atualizar movimentação
+        // Calcular saldo (colheita anterior + saídas do dia)
+        const outrasColheitas = await tx.colheita.findMany({
+          where: { produtoId: body.produtoId, data, id: { not: existing.id } },
+        });
+        const saldoAntes = outrasColheitas.reduce((s, c) => s + c.quantidade, 0);
+
         if (existingMov) {
           await tx.movimentacaoEstoque.update({
             where: { id: existingMov.id },
-            data: { quantidade: body.quantidade, motivo: body.observacao || "Colheita do dia" },
+            data: {
+              quantidade: body.quantidade,
+              saldoInicial: saldoAntes,
+              saldoFinal: saldoAntes + body.quantidade,
+              motivo: body.observacao || "Colheita do dia",
+            },
           });
         } else {
           await tx.movimentacaoEstoque.create({
             data: {
               produtoId: body.produtoId, tipo: "colheita", quantidade: body.quantidade,
-              unidade: "kg", saldoInicial: 0, saldoFinal: body.quantidade,
+              unidade: "kg", saldoInicial: saldoAntes, saldoFinal: saldoAntes + body.quantidade,
               motivo: body.observacao || "Colheita do dia",
               referencia: String(colheita.id), data, criadoEm: now,
             },
@@ -69,10 +79,15 @@ export async function POST(request: NextRequest) {
           },
           include: { produto: true },
         });
+        // Saldo = outras colheitas do dia (se houver)
+        const outrasColheitas2 = await tx.colheita.findMany({
+          where: { produtoId: body.produtoId, data, id: { not: colheita.id } },
+        });
+        const saldoAntes2 = outrasColheitas2.reduce((s, c) => s + c.quantidade, 0);
         await tx.movimentacaoEstoque.create({
           data: {
             produtoId: body.produtoId, tipo: "colheita", quantidade: body.quantidade,
-            unidade: "kg", saldoInicial: 0, saldoFinal: body.quantidade,
+            unidade: "kg", saldoInicial: saldoAntes2, saldoFinal: saldoAntes2 + body.quantidade,
             motivo: body.observacao || "Colheita do dia",
             referencia: String(colheita.id), data, criadoEm: now,
           },

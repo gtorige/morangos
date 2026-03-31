@@ -24,10 +24,33 @@ export async function GET(request: NextRequest) {
       where: { dataEntrega: data, statusEntrega: "Entregue" },
       include: { itens: true },
     });
+    // Converter vendido de unidades para kg (colheita é registrada em kg)
+    const produtoMap = new Map(produtos.map(p => [p.id, p]));
     const vendidoMap = new Map<number, number>();
     for (const p of pedidos) {
       for (const item of p.itens) {
-        vendidoMap.set(item.produtoId, (vendidoMap.get(item.produtoId) || 0) + item.quantidade);
+        const prod = produtoMap.get(item.produtoId);
+        // Converter para kg se produto diário com pesoUnitarioGramas
+        const qtdKg = (prod?.tipoEstoque === "diario" && prod.pesoUnitarioGramas)
+          ? (item.quantidade * prod.pesoUnitarioGramas) / 1000
+          : item.quantidade;
+        vendidoMap.set(item.produtoId, (vendidoMap.get(item.produtoId) || 0) + qtdKg);
+      }
+    }
+
+    // Também incluir pedidos pendentes para "reservado"
+    const pedidosPendentes = await prisma.pedido.findMany({
+      where: { dataEntrega: data, statusEntrega: { in: ["Pendente", "Em rota"] } },
+      include: { itens: true },
+    });
+    const reservadoMap = new Map<number, number>();
+    for (const p of pedidosPendentes) {
+      for (const item of p.itens) {
+        const prod = produtoMap.get(item.produtoId);
+        const qtdKg = (prod?.tipoEstoque === "diario" && prod.pesoUnitarioGramas)
+          ? (item.quantidade * prod.pesoUnitarioGramas) / 1000
+          : item.quantidade;
+        reservadoMap.set(item.produtoId, (reservadoMap.get(item.produtoId) || 0) + qtdKg);
       }
     }
 
@@ -35,13 +58,15 @@ export async function GET(request: NextRequest) {
       if (prod.tipoEstoque === "diario") {
         const colhido = colheitaMap.get(prod.id) || 0;
         const vendido = vendidoMap.get(prod.id) || 0;
-        const disponivel = colhido - vendido;
+        const reservado = reservadoMap.get(prod.id) || 0;
+        const disponivel = colhido - vendido - reservado;
         return {
           produtoId: prod.id,
           nome: prod.nome,
           tipoEstoque: "diario",
           colhidoHoje: colhido,
           vendidoHoje: vendido,
+          reservadoHoje: reservado,
           disponivel,
           unidadeVenda: prod.unidadeVenda,
           pesoUnitarioGramas: prod.pesoUnitarioGramas,

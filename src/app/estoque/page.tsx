@@ -123,6 +123,7 @@ export default function EstoquePage() {
   const [filtroTipo, setFiltroTipo] = useState("todos");
   const [filtroDataDe, setFiltroDataDe] = useState("");
   const [filtroDataAte, setFiltroDataAte] = useState("");
+  const [filtroProdutoId, setFiltroProdutoId] = useState("");
 
   // Modals
   const [congelarOpen, setCongelarOpen] = useState(false);
@@ -681,7 +682,7 @@ export default function EstoquePage() {
               ))}
             </div>
 
-            {/* Date filters */}
+            {/* Filters: dates + product */}
             <div className="flex flex-wrap gap-2 items-end">
               <div className="space-y-1">
                 <Label className="text-xs">De</Label>
@@ -691,8 +692,21 @@ export default function EstoquePage() {
                 <Label className="text-xs">Até</Label>
                 <Input type="date" value={filtroDataAte} onChange={(e) => setFiltroDataAte(e.target.value)} className="w-36 h-7 text-xs" />
               </div>
-              {(filtroDataDe || filtroDataAte) && (
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setFiltroDataDe(""); setFiltroDataAte(""); }}>Limpar datas</Button>
+              <div className="space-y-1">
+                <Label className="text-xs">Produto</Label>
+                <select
+                  value={filtroProdutoId}
+                  onChange={(e) => setFiltroProdutoId(e.target.value)}
+                  className="h-7 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus:border-ring"
+                >
+                  <option value="">Todos</option>
+                  {produtos.map(p => (
+                    <option key={p.id} value={p.id}>{p.nome}</option>
+                  ))}
+                </select>
+              </div>
+              {(filtroDataDe || filtroDataAte || filtroProdutoId) && (
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setFiltroDataDe(""); setFiltroDataAte(""); setFiltroProdutoId(""); }}>Limpar</Button>
               )}
             </div>
 
@@ -700,6 +714,7 @@ export default function EstoquePage() {
               const filtered = movimentacoes.filter(m => {
                 if (filtroDataDe && m.data < filtroDataDe) return false;
                 if (filtroDataAte && m.data > filtroDataAte) return false;
+                if (filtroProdutoId && m.produtoId !== Number(filtroProdutoId)) return false;
                 return true;
               });
               return loading ? (

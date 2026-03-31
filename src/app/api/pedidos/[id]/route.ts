@@ -71,6 +71,31 @@ export async function PUT(
       return NextResponse.json(pedido);
     }
 
+    // Se está REVERTENDO de "Entregue" para outro status, reverter estoque
+    if (pedidoData.statusEntrega && pedidoData.statusEntrega !== "Entregue") {
+      const pedidoCheck = await prisma.pedido.findUnique({ where: { id: idNum } });
+      if (pedidoCheck?.statusEntrega === "Entregue") {
+        await prisma.$transaction(async (tx) => {
+          // Deletar movimentações de pedido e reverter estoqueAtual
+          const movs = await tx.movimentacaoEstoque.findMany({
+            where: { referencia: String(idNum), tipo: "pedido" },
+            include: { produto: true },
+          });
+          for (const mov of movs) {
+            if (mov.produto.tipoEstoque === "estoque") {
+              await tx.produto.update({
+                where: { id: mov.produtoId },
+                data: { estoqueAtual: { decrement: mov.quantidade } }, // mov.quantidade is negative, so decrementing adds back
+              });
+            }
+          }
+          await tx.movimentacaoEstoque.deleteMany({
+            where: { referencia: String(idNum), tipo: "pedido" },
+          });
+        });
+      }
+    }
+
     // Se está marcando como "Entregue", debitar estoque de produtos tipo "estoque"
     if (pedidoData.statusEntrega === "Entregue") {
       const pedidoAtual = await prisma.pedido.findUnique({
@@ -132,18 +157,35 @@ export async function PUT(
                 data: { estoqueAtual: { decrement: item.quantidade } },
               });
             } else {
-              // Produto diário: criar movimentação de saída (não altera estoqueAtual)
+              // Produto diário: calcular saldo baseado em colheita - saídas do dia
               const pesoKg = item.produto.pesoUnitarioGramas
                 ? (item.quantidade * item.produto.pesoUnitarioGramas) / 1000
                 : item.quantidade;
+              const unidade = item.produto.pesoUnitarioGramas ? "kg" : "un";
+
+              // Buscar colheita do dia
+              const colheitasDia = await tx.colheita.findMany({
+                where: { produtoId: item.produtoId, data: pedidoAtual.dataEntrega },
+              });
+              const colhido = colheitasDia.reduce((s, c) => s + c.quantidade, 0);
+
+              // Buscar saídas já feitas do dia (pedidos)
+              const saidasDia = await tx.movimentacaoEstoque.findMany({
+                where: { produtoId: item.produtoId, data: pedidoAtual.dataEntrega, tipo: "pedido" },
+              });
+              const jaSaiu = saidasDia.reduce((s, m) => s + Math.abs(m.quantidade), 0);
+
+              const saldoInicial = colhido - jaSaiu;
+              const saldoFinal = saldoInicial - pesoKg;
+
               await tx.movimentacaoEstoque.create({
                 data: {
                   produtoId: item.produtoId,
                   tipo: "pedido",
                   quantidade: -pesoKg,
-                  unidade: item.produto.pesoUnitarioGramas ? "kg" : "un",
-                  saldoInicial: 0,
-                  saldoFinal: 0,
+                  unidade,
+                  saldoInicial,
+                  saldoFinal,
                   motivo: `Pedido #${idNum} — ${pedidoAtual.cliente?.nome || ""}`.trim(),
                   referencia: String(idNum),
                   data: pedidoAtual.dataEntrega,
@@ -183,6 +225,23 @@ export async function DELETE(
     const idNum = parseId(id);
 
     await prisma.$transaction(async (tx) => {
+      // Reverter movimentações de estoque se o pedido estava entregue
+      const movs = await tx.movimentacaoEstoque.findMany({
+        where: { referencia: String(idNum), tipo: "pedido" },
+        include: { produto: true },
+      });
+      for (const mov of movs) {
+        if (mov.produto.tipoEstoque === "estoque") {
+          await tx.produto.update({
+            where: { id: mov.produtoId },
+            data: { estoqueAtual: { decrement: mov.quantidade } },
+          });
+        }
+      }
+      await tx.movimentacaoEstoque.deleteMany({
+        where: { referencia: String(idNum), tipo: "pedido" },
+      });
+
       await tx.pedidoItem.deleteMany({ where: { pedidoId: idNum } });
       await tx.pedido.delete({ where: { id: idNum } });
     });

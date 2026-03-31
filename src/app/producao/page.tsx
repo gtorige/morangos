@@ -47,6 +47,7 @@ interface RowState {
   quantidade: string; // controlled input
   observacao: string;
   showNote: boolean;
+  hadColheita: boolean; // true if colheita existed when loaded
 }
 
 interface DemandItem {
@@ -85,7 +86,7 @@ function calcNecessario(
 ): { unidades: number; kg: number | null } {
   let unidades = 0;
   for (const pedido of pedidos) {
-    if (pedido.statusEntrega === "Cancelado") continue;
+    if (pedido.statusEntrega === "Cancelado" || pedido.statusEntrega === "Entregue") continue;
     for (const item of pedido.itens) {
       if (item.produtoId === produtoId) {
         unidades += item.quantidade;
@@ -100,7 +101,7 @@ function calcNecessario(
 function buildDemandFromPedidos(pedidos: Pedido[], produtos: Produto[]): DemandItem[] {
   const map = new Map<number, { unidades: number; produto: Produto }>();
   for (const pedido of pedidos) {
-    if (pedido.statusEntrega === "Cancelado") continue;
+    if (pedido.statusEntrega === "Cancelado" || pedido.statusEntrega === "Entregue") continue;
     for (const item of pedido.itens) {
       const entry = map.get(item.produtoId);
       if (entry) {
@@ -199,6 +200,7 @@ export default function ProducaoPage() {
           quantidade: existing ? String(existing.quantidade) : "",
           observacao: existing?.observacao ?? "",
           showNote: false,
+          hadColheita: !!existing,
         };
       });
       setRows(rowStates);
@@ -270,18 +272,20 @@ export default function ProducaoPage() {
     setSaving(true);
     setSaveStatus("saving");
     try {
+      // Envia TODOS os rows (inclusive qty=0 para deletar colheita existente)
       const promises = rows
-        .filter((r) => {
+        .map((r) => {
           const qty = parseFloat(r.quantidade);
-          return !isNaN(qty) && qty > 0;
+          return { ...r, qty: isNaN(qty) ? 0 : qty };
         })
+        .filter((r) => r.qty > 0 || r.hadColheita)
         .map((r) =>
           fetch("/api/colheita", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               produtoId: r.produtoId,
-              quantidade: parseFloat(r.quantidade),
+              quantidade: r.qty,
               data: hoje,
               observacao: r.observacao || null,
             }),
