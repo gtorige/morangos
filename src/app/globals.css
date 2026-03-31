@@ -98,6 +98,11 @@
   select, input, textarea, button {
     font-family: inherit;
   }
+  /* Fix native select options invisible in dark mode */
+  select option {
+    background-color: var(--color-card);
+    color: var(--color-foreground);
+  }
   /* Make date inputs fully clickable — click anywhere opens the picker */
   input[type="date"] {
     cursor: pointer;
