@@ -121,7 +121,7 @@ function buildDemandFromPedidos(pedidos: Pedido[], produtos: Produto[]): DemandI
         : null;
     items.push({
       produtoNome: produto.nome,
-      classe: extrairClasseDoNome(produto.nome),
+      classe: produto.classe || null,
       quantidadeUnidades: unidades,
       quantidadeKg: kg,
       pesoUnitarioGramas: produto.pesoUnitarioGramas,

@@ -18,6 +18,7 @@ export interface Produto {
   id: number;
   nome: string;
   preco: number;
+  classe: string | null;
   tipoEstoque: string;
   pesoUnitarioGramas: number | null;
   estoqueMinimo: number;
