@@ -55,6 +55,7 @@ export interface MovimentacaoEstoque {
 export interface EstoqueDia {
   produtoId: number;
   nome: string;
+  classe?: string | null;
   tipoEstoque: string;
   colhidoHoje?: number;
   vendidoHoje?: number;

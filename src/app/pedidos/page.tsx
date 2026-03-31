@@ -1719,7 +1719,7 @@ function PedidosPageInner() {
 
       {/* Side filter drawer on xl+ */}
       {isDesktopLarge && drawerFiltrosOpen && (
-        <div className="w-72 shrink-0">
+        <div className="w-72 shrink-0 sticky top-4 max-h-[calc(100vh-100px)]">
           <DrawerFiltrosContent />
         </div>
       )}

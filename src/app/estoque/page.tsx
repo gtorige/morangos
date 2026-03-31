@@ -239,7 +239,8 @@ export default function EstoquePage() {
   );
   const congelarQtd = parseFloat(congelarForm.quantidadeKg) || 0;
   const congelarPesoKgUn = congelarProdutoCongelado?.pesoUnitarioGramas ? congelarProdutoCongelado.pesoUnitarioGramas / 1000 : 1;
-  const congelarUnidades = Math.floor(congelarQtd / congelarPesoKgUn);
+  const congelarPerda = parseFloat(congelarForm.perdaKg) || 0;
+  const congelarUnidades = Math.floor((congelarQtd - congelarPerda) / congelarPesoKgUn);
 
   // ── Handlers ──
 
@@ -523,7 +524,7 @@ export default function EstoquePage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {/* Frescos section */}
+                    {/* Frescos section — grouped by classe */}
                     {frescos.length > 0 && (
                       <>
                         <TableRow>
@@ -534,12 +535,24 @@ export default function EstoquePage() {
                             Frescos — saldo de hoje
                           </TableCell>
                         </TableRow>
-                        {frescos.map((item) => {
-                          const st = statusFresco(item.disponivel);
-                          return (
-                            <TableRow key={item.produtoId}>
+                        {(() => {
+                          // Group frescos by classe
+                          const classeMap = new Map<string, { colhido: number; vendido: number; reservado: number; disponivel: number }>();
+                          for (const item of frescos) {
+                            const cls = item.classe || "Sem classe";
+                            const existing = classeMap.get(cls) || { colhido: 0, vendido: 0, reservado: 0, disponivel: 0 };
+                            existing.colhido += item.colhidoHoje ?? 0;
+                            existing.vendido += item.vendidoHoje ?? 0;
+                            existing.reservado += item.reservadoHoje ?? 0;
+                            existing.disponivel += item.disponivel;
+                            classeMap.set(cls, existing);
+                          }
+                          return [...classeMap.entries()].sort(([a],[b]) => a.localeCompare(b)).map(([cls, data]) => {
+                            const st = statusFresco(data.disponivel);
+                            return (
+                            <TableRow key={cls}>
                               <TableCell className="font-medium">
-                                {item.nome}
+                                Morango Classe {cls}
                               </TableCell>
                               <TableCell className="hidden sm:table-cell">
                                 <Badge
@@ -550,11 +563,11 @@ export default function EstoquePage() {
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right tabular-nums">
-                                <span className={item.disponivel > 0 ? "text-green-500" : item.disponivel < 0 ? "text-red-500" : ""}>{item.disponivel.toFixed(1)} kg</span>
+                                <span className={data.disponivel > 0 ? "text-green-500" : data.disponivel < 0 ? "text-red-500" : ""}>{data.disponivel.toFixed(1)} kg</span>
                                 <span className="block text-[10px] text-muted-foreground">
-                                  {(item.colhidoHoje ?? 0).toFixed(1)} colhido
-                                  {(item.vendidoHoje ?? 0) > 0 && ` - ${(item.vendidoHoje ?? 0).toFixed(1)} vendido`}
-                                  {(item.reservadoHoje ?? 0) > 0 && ` - ${(item.reservadoHoje ?? 0).toFixed(1)} reservado`}
+                                  {data.colhido.toFixed(1)} colhido
+                                  {data.vendido > 0 && ` - ${data.vendido.toFixed(1)} vendido`}
+                                  {data.reservado > 0 && ` - ${data.reservado.toFixed(1)} reservado`}
                                 </span>
                               </TableCell>
                               <TableCell className="hidden md:table-cell text-right text-muted-foreground">
@@ -572,8 +585,9 @@ export default function EstoquePage() {
                               </TableCell>
                               <TableCell />
                             </TableRow>
-                          );
-                        })}
+                            );
+                          });
+                        })()}
                       </>
                     )}
 
@@ -881,12 +895,17 @@ export default function EstoquePage() {
                 className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
                 required
               >
-                <option value="">Selecione o produto fresco</option>
-                {produtosFrescos.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nome}
-                  </option>
-                ))}
+                <option value="">Selecione a classe</option>
+                {(() => {
+                  // Group by classe, show one option per class
+                  const classeMap = new Map<string, Produto>();
+                  for (const p of produtosFrescos) {
+                    if (p.classe && !classeMap.has(p.classe)) classeMap.set(p.classe, p);
+                  }
+                  return [...classeMap.entries()].sort(([a],[b]) => a.localeCompare(b)).map(([cls, p]) => (
+                    <option key={cls} value={p.id}>Morango Classe {cls}</option>
+                  ));
+                })()}
               </select>
             </div>
 

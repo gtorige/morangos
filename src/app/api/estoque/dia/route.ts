@@ -76,6 +76,7 @@ export async function GET(request: NextRequest) {
         return {
           produtoId: prod.id,
           nome: prod.nome,
+          classe: prod.classe,
           tipoEstoque: "diario",
           colhidoHoje: colhido,
           vendidoHoje: vendido,
