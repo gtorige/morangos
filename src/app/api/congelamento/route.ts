@@ -81,7 +81,27 @@ export async function POST(request: NextRequest) {
         data: { estoqueAtual: { increment: unidadesCongeladas } },
       });
 
-      return { lote, saida: movSaida, entrada: movEntrada, unidadesCongeladas };
+      // 4. Registrar perda/descarte (se houver), atrelada ao mesmo lote
+      let movPerda = null;
+      const perdaKg = body.perdaKg || 0;
+      if (perdaKg > 0) {
+        movPerda = await tx.movimentacaoEstoque.create({
+          data: {
+            produtoId: body.produtoFrescoId,
+            tipo: "descarte",
+            quantidade: -perdaKg,
+            unidade: "kg",
+            lote,
+            saldoInicial: 0,
+            saldoFinal: 0,
+            motivo: `Perda no congelamento ${lote}`,
+            data,
+            criadoEm: now,
+          },
+        });
+      }
+
+      return { lote, saida: movSaida, entrada: movEntrada, perda: movPerda, unidadesCongeladas, perdaKg };
     });
 
     return NextResponse.json(result, { status: 201 });

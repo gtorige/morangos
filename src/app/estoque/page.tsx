@@ -144,6 +144,7 @@ export default function EstoquePage() {
     data: todayStr(),
     produtoFrescoId: "",
     quantidadeKg: "",
+    perdaKg: "",
     produtoCongeladoId: "",
     observacao: "",
   });
@@ -237,6 +238,8 @@ export default function EstoquePage() {
     (p) => p.id === Number(congelarForm.produtoCongeladoId)
   );
   const congelarQtd = parseFloat(congelarForm.quantidadeKg) || 0;
+  const congelarPesoKgUn = congelarProdutoCongelado?.pesoUnitarioGramas ? congelarProdutoCongelado.pesoUnitarioGramas / 1000 : 1;
+  const congelarUnidades = Math.floor(congelarQtd / congelarPesoKgUn);
 
   // ── Handlers ──
 
@@ -253,6 +256,7 @@ export default function EstoquePage() {
           produtoFrescoId: Number(congelarForm.produtoFrescoId),
           produtoCongeladoId: Number(congelarForm.produtoCongeladoId),
           quantidadeKg: congelarQtd,
+          perdaKg: parseFloat(congelarForm.perdaKg) || 0,
           data: congelarForm.data,
           observacao: congelarForm.observacao || undefined,
         }),
@@ -263,6 +267,7 @@ export default function EstoquePage() {
           data: todayStr(),
           produtoFrescoId: "",
           quantidadeKg: "",
+          perdaKg: "",
           produtoCongeladoId: "",
           observacao: "",
         });
@@ -447,6 +452,7 @@ export default function EstoquePage() {
                 data: todayStr(),
                 produtoFrescoId: "",
                 quantidadeKg: "",
+                perdaKg: "",
                 produtoCongeladoId: "",
                 observacao: "",
               });
@@ -927,6 +933,26 @@ export default function EstoquePage() {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="cong-perda">Perda no processo (kg)</Label>
+              <Input
+                id="cong-perda"
+                type="number"
+                step="0.1"
+                min="0"
+                placeholder="0"
+                value={congelarForm.perdaKg}
+                onChange={(e) =>
+                  setCongelarForm({
+                    ...congelarForm,
+                    perdaKg: e.target.value,
+                  })
+                }
+              />
+              <p className="text-[10px] text-muted-foreground -mt-1">
+                Kg descartados durante o congelamento (registrado como descarte no lote)
+              </p>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="cong-obs">Observação (opcional)</Label>
               <Input
                 id="cong-obs"
@@ -949,20 +975,28 @@ export default function EstoquePage() {
                   <p className="text-xs font-medium text-blue-400">
                     Pre-visualizacao
                   </p>
-                  <div className="space-y-1 text-xs">
-                    <p className="text-red-400">
-                      Saida: -{congelarQtd.toFixed(1)} kg de{" "}
-                      {congelarProdutoFresco.nome}
-                    </p>
-                    <p className="text-green-400">
-                      Entrada: +{congelarQtd.toFixed(1)} un de{" "}
-                      {congelarProdutoCongelado.nome}
-                    </p>
-                    <p className="text-muted-foreground">
-                      {congelarProdutoFresco.nome} ({congelarQtd.toFixed(1)} kg){" "}
-                      → {congelarProdutoCongelado.nome}
-                    </p>
-                  </div>
+                  {(() => {
+                    const perda = parseFloat(congelarForm.perdaKg) || 0;
+                    return (
+                      <div className="space-y-1 text-xs">
+                        <p className="text-red-400">
+                          Saída: -{congelarQtd.toFixed(1)} kg de {congelarProdutoFresco.nome}
+                        </p>
+                        <p className="text-green-400">
+                          Entrada: +{congelarUnidades} un de {congelarProdutoCongelado.nome}
+                        </p>
+                        {perda > 0 && (
+                          <p className="text-red-500">
+                            Descarte: -{perda.toFixed(1)} kg (perda no processo)
+                          </p>
+                        )}
+                        <p className="text-muted-foreground">
+                          {congelarQtd.toFixed(1)} kg → {congelarUnidades} un
+                          {perda > 0 && ` + ${perda.toFixed(1)} kg descarte`}
+                        </p>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

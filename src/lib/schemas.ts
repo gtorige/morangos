@@ -238,6 +238,7 @@ export const congelamentoCreateSchema = z.object({
   produtoFrescoId: posInt(),
   produtoCongeladoId: posInt(),
   quantidadeKg: z.number().positive(),
+  perdaKg: z.number().min(0).optional().default(0),
   data: dateStr().optional(),
   observacao: str(500).optional().nullable(),
 });

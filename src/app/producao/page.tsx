@@ -43,8 +43,10 @@ import type { Produto, Colheita, Pedido } from "@/lib/types";
 type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "error";
 
 interface RowState {
-  produtoId: number;
-  quantidade: string; // controlled input
+  classe: string; // "A", "B", "C"
+  produtoIds: number[]; // all product IDs in this class
+  representanteId: number; // first product ID (used for colheita registration)
+  quantidade: string; // controlled input (kg)
   observacao: string;
   showNote: boolean;
   hadColheita: boolean; // true if colheita existed when loaded
@@ -79,23 +81,24 @@ function fmtKg(value: number): string {
   return `${value.toFixed(1).replace(".", ",")} kg`;
 }
 
-function calcNecessario(
+function calcNecessarioClasse(
   pedidos: Pedido[],
-  produtoId: number,
-  pesoUnitarioGramas: number | null
-): { unidades: number; kg: number | null } {
-  let unidades = 0;
+  produtoIds: number[],
+  produtosMap: Map<number, Produto>
+): number {
+  let totalKg = 0;
+  const idsSet = new Set(produtoIds);
   for (const pedido of pedidos) {
     if (pedido.statusEntrega === "Cancelado" || pedido.statusEntrega === "Entregue") continue;
     for (const item of pedido.itens) {
-      if (item.produtoId === produtoId) {
-        unidades += item.quantidade;
+      if (idsSet.has(item.produtoId)) {
+        const prod = produtosMap.get(item.produtoId);
+        const pesoG = prod?.pesoUnitarioGramas;
+        totalKg += pesoG ? (item.quantidade * pesoG) / 1000 : item.quantidade;
       }
     }
   }
-  const kg =
-    pesoUnitarioGramas != null ? unidades * (pesoUnitarioGramas / 1000) : null;
-  return { unidades, kg };
+  return totalKg;
 }
 
 function buildDemandFromPedidos(pedidos: Pedido[], produtos: Produto[]): DemandItem[] {
@@ -191,18 +194,31 @@ export default function ProducaoPage() {
       setColheitas(colData);
       setPedidosHoje(pedHojeData);
 
-      // Init rows for daily products
-      const diarios = prodData.filter((p) => p.tipoEstoque === "diario");
-      const rowStates: RowState[] = diarios.map((p) => {
-        const existing = colData.find((c) => c.produtoId === p.id);
-        return {
-          produtoId: p.id,
-          quantidade: existing ? String(existing.quantidade) : "",
-          observacao: existing?.observacao ?? "",
-          showNote: false,
-          hadColheita: !!existing,
-        };
-      });
+      // Init rows grouped by classe
+      const diarios = prodData.filter((p) => p.tipoEstoque === "diario" && p.classe);
+      const classeMap = new Map<string, Produto[]>();
+      for (const p of diarios) {
+        const cls = p.classe!;
+        classeMap.set(cls, [...(classeMap.get(cls) || []), p]);
+      }
+      const rowStates: RowState[] = [...classeMap.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([cls, prods]) => {
+          const repId = prods[0].id;
+          // Sum colheitas for all products in this class
+          const classColheitas = colData.filter((c) => prods.some((p) => p.id === c.produtoId));
+          const totalColhido = classColheitas.reduce((s, c) => s + c.quantidade, 0);
+          const firstObs = classColheitas.find((c) => c.observacao)?.observacao ?? "";
+          return {
+            classe: cls,
+            produtoIds: prods.map((p) => p.id),
+            representanteId: repId,
+            quantidade: totalColhido > 0 ? String(totalColhido) : "",
+            observacao: firstObs,
+            showNote: false,
+            hadColheita: classColheitas.length > 0,
+          };
+        });
       setRows(rowStates);
       setSaveStatus("idle");
 
@@ -284,7 +300,7 @@ export default function ProducaoPage() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              produtoId: r.produtoId,
+              produtoId: r.representanteId,
               quantidade: r.qty,
               data: hoje,
               observacao: r.observacao || null,
@@ -589,31 +605,28 @@ export default function ProducaoPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {produtosDiarios.map((produto, index) => {
-                  const row = rows[index];
-                  if (!row) return null;
-
-                  const { kg: necessarioKg } = calcNecessario(
+                {rows.map((row, index) => {
+                  const produtosMap = new Map(produtos.map(p => [p.id, p]));
+                  const necessarioKg = calcNecessarioClasse(
                     pedidosHoje,
-                    produto.id,
-                    produto.pesoUnitarioGramas
+                    row.produtoIds,
+                    produtosMap
                   );
                   const colhido = parseFloat(row.quantidade) || 0;
-                  const saldo =
-                    necessarioKg != null ? colhido - necessarioKg : null;
+                  const saldo = colhido - necessarioKg;
                   const inputBorderClass =
-                    saldo != null
+                    colhido > 0
                       ? saldo >= 0
                         ? "border-green-500/40 focus:border-green-500"
                         : "border-red-500/40 focus:border-red-500"
                       : "";
 
                   return (
-                    <TableRow key={produto.id}>
-                      {/* Product name */}
+                    <TableRow key={row.classe}>
+                      {/* Class name */}
                       <TableCell>
                         <div>
-                          <p className="font-medium">{produto.nome}</p>
+                          <p className="font-medium">Morango Classe {row.classe}</p>
                           <p className="text-xs text-muted-foreground">
                             fresco · ciclo diário
                           </p>
@@ -622,9 +635,7 @@ export default function ProducaoPage() {
 
                       {/* Necessario */}
                       <TableCell className="hidden sm:table-cell text-right tabular-nums">
-                        {necessarioKg != null ? fmtKg(necessarioKg) : (
-                          <span className="text-muted-foreground">&mdash;</span>
-                        )}
+                        {fmtKg(necessarioKg)}
                       </TableCell>
 
                       {/* Colhido input */}
@@ -648,12 +659,12 @@ export default function ProducaoPage() {
 
                       {/* Saldo */}
                       <TableCell className="hidden sm:table-cell text-right tabular-nums">
-                        {renderSaldo(colhido, necessarioKg)}
+                        {renderSaldo(colhido, necessarioKg > 0 ? necessarioKg : null)}
                       </TableCell>
 
                       {/* Status */}
                       <TableCell className="hidden md:table-cell">
-                        {renderStatus(colhido, necessarioKg)}
+                        {renderStatus(colhido, necessarioKg > 0 ? necessarioKg : null)}
                       </TableCell>
 
                       {/* Note toggle */}
@@ -706,12 +717,10 @@ export default function ProducaoPage() {
           <CardContent className="border-t space-y-2 pt-4">
             {rows.map((row, index) => {
               if (!row.showNote) return null;
-              const produto = produtosDiarios[index];
-              if (!produto) return null;
               return (
-                <div key={produto.id} className="flex items-center gap-3">
+                <div key={row.classe} className="flex items-center gap-3">
                   <span className="text-sm text-muted-foreground w-40 shrink-0 truncate">
-                    {produto.nome}
+                    Morango Classe {row.classe}
                   </span>
                   <Input
                     placeholder="Observação..."
@@ -727,7 +736,7 @@ export default function ProducaoPage() {
           </CardContent>
         )}
 
-        {produtosDiarios.length > 0 && (
+        {rows.length > 0 && (
           <CardFooter className="justify-end gap-3">
             <Button
               ref={saveButtonRef}
