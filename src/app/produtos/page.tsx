@@ -254,7 +254,7 @@ export default function ProdutosPage() {
                     id="tipoEstoque"
                     value={form.tipoEstoque}
                     onChange={(e) => setForm({ ...form, tipoEstoque: e.target.value as "diario" | "estoque" })}
-                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                    className="flex h-9 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
                   >
                     <option value="diario">Fresco (ciclo diário)</option>
                     <option value="estoque">Acumulado (persistente)</option>
