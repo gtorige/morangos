@@ -34,6 +34,7 @@ interface Cliente {
   numero: string;
   bairro: string;
   cidade: string;
+  observacoes?: string;
 }
 
 export interface NovoPedidoInitialData {
@@ -522,6 +523,9 @@ export function NovoPedidoSheet({ open, onOpenChange, onSuccess, initialData }: 
                     <p><strong>Endereço:</strong> {selectedCliente.rua}{selectedCliente.numero && `, ${selectedCliente.numero}`}</p>
                     <p><strong>Bairro:</strong> {selectedCliente.bairro}</p>
                     <p><strong>Cidade:</strong> {selectedCliente.cidade}</p>
+                    {selectedCliente.observacoes && (
+                      <p className="text-xs italic mt-1">Obs: {selectedCliente.observacoes}</p>
+                    )}
                   </div>
                 )}
 
