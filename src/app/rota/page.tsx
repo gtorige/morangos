@@ -864,6 +864,9 @@ export default function RotaPage() {
                   <Button variant="ghost" size="icon-sm" onClick={() => moveDown(index)} disabled={index === listaOrdenada.length - 1}>
                     <ArrowDown className="size-3.5" />
                   </Button>
+                  <Button variant="ghost" size="icon-sm" className="text-destructive" onClick={() => removerParada(item.data.id)} title="Remover parada">
+                    <X className="size-3.5" />
+                  </Button>
                 </div>
               </div>
             )
