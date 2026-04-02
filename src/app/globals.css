@@ -9,7 +9,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-inter), "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, monospace;
-  --font-heading: var(--font-inter), "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-dm-sans), "DM Sans", ui-sans-serif, system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -98,6 +98,10 @@
   select, input, textarea, button {
     font-family: inherit;
   }
+  /* Tabular numbers for prices, quantities, and data columns */
+  td, th, [data-slot="kpi-value"], .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
   /* Fix native select options invisible in dark mode */
   select option {
     background-color: var(--color-card);
@@ -116,4 +120,15 @@
     width: 100%;
     height: 100%;
   }
+}
+
+/* Shimmer skeleton animation */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 0%, oklch(0.25 0 0) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
 }
