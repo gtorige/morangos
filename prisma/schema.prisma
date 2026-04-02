@@ -91,6 +91,7 @@ model Pedido {
   recorrenteId        Int?            @map("recorrente_id")
   recorrente          PedidoRecorrente? @relation(fields: [recorrenteId], references: [id])
   itens               PedidoItem[]
+  updatedAt           String          @default("") @map("updated_at")
 
   @@index([clienteId])
   @@index([dataEntrega])
@@ -156,6 +157,7 @@ model Conta {
   parcelas        Int           @default(1)  @map("parcelas")
   parcelaNumero   Int           @default(1)  @map("parcela_numero")
   parcelaGrupoId  Int?          @map("parcela_grupo_id")
+  updatedAt       String        @default("") @map("updated_at")
 
   @@index([fornecedorId])
   @@index([categoriaId])

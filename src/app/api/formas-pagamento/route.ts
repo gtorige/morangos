@@ -7,6 +7,8 @@ export async function GET() {
     const formasPagamento = await prisma.formaPagamento.findMany({
       orderBy: { nome: "asc" },
     });
-    return NextResponse.json(formasPagamento);
+    const res = NextResponse.json(formasPagamento);
+    res.headers.set("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
+    return res;
   });
 }

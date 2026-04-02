@@ -2,94 +2,18 @@
 
 import React, { useEffect, useState, useRef, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { differenceInDays, parseISO, isToday, isPast } from "date-fns";
+import { parseISO, isToday, isPast } from "date-fns";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { TableSkeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/ui/empty-state";
-import { StatusBadge } from "@/components/ui/status-badge";
-import { TabsNav, type TabItem } from "@/components/ui/tabs-nav";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Plus,
-  Trash2,
-  Receipt,
-  Store,
-  Tag,
-  Check,
-  Filter,
-  SlidersHorizontal,
-  Download,
-  Search,
-  RotateCcw,
-  ChevronUp,
-  ChevronDown,
-  RotateCw,
-} from "lucide-react";
+import { TabsNav } from "@/components/ui/tabs-nav";
+import { Plus, Receipt, Store, Tag } from "lucide-react";
 import { formatPrice, formatDate } from "@/lib/formatting";
+import type { Conta, Fornecedor, Categoria, Subcategoria, ContaForm } from "@/hooks/use-contas";
 
-// ── Types ──
-
-interface Conta {
-  id: number;
-  fornecedorNome: string;
-  categoria: string;
-  categoriaId: number | null;
-  subcategoriaId: number | null;
-  tipoFinanceiro: string;
-  valor: number;
-  vencimento: string;
-  situacao: string;
-  parcelas: number;
-  parcelaNumero: number;
-  parcelaGrupoId: number | null;
-}
-
-interface Subcategoria {
-  id: number;
-  nome: string;
-  categoriaId: number;
-  _count: { contas: number };
-}
-
-interface ContaForm {
-  fornecedorNome: string;
-  categoriaId: string;
-  subcategoriaId: string;
-  tipoFinanceiro: string;
-  valor: string;
-  vencimento: string;
-  situacao: string;
-  parcelas: string;
-}
-
-interface Fornecedor {
-  id: number;
-  nome: string;
-  _count: { contas: number };
-}
-
-interface Categoria {
-  id: number;
-  nome: string;
-  _count: { contas: number };
-}
+import { ContaTable } from "./_components/ContaTable";
+import { ContaFormDialog } from "./_components/ContaFormDialog";
+import { ContaFilters } from "./_components/ContaFilters";
+import { FornecedoresTab } from "./_components/FornecedoresTab";
+import { CategoriasTab } from "./_components/CategoriasTab";
 
 type Tab = "contas" | "fornecedores" | "categorias";
 
@@ -138,28 +62,6 @@ const emptyContaForm: ContaForm = {
   situacao: "Pendente",
   parcelas: "1",
 };
-
-// ── Helpers ──
-
-function getRowClassName(conta: Conta) {
-  if (conta.situacao !== "Pendente") return "";
-  try {
-    const venc = parseISO(conta.vencimento);
-    if (isToday(venc) || isPast(venc)) return "bg-red-500/10 border-l-2 border-l-red-500";
-    const diff = differenceInDays(venc, new Date());
-    if (diff > 0 && diff <= 5) return "bg-yellow-500/10 border-l-2 border-l-yellow-500";
-  } catch {}
-  return "";
-}
-
-function getSituacaoBadge(conta: Conta) {
-  if (conta.situacao === "Pago") return <StatusBadge status="Pago" context="conta" />;
-  try {
-    const venc = parseISO(conta.vencimento);
-    if (isToday(venc) || isPast(venc)) return <StatusBadge status="Vencida" context="conta" />;
-  } catch {}
-  return <StatusBadge status="Pendente" context="conta" />;
-}
 
 // ── Component ──
 
@@ -233,7 +135,7 @@ function ContasPage() {
   const [sortField, setSortField] = useState<ContaColKey>("vencimento");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
-  // Apply URL params when searchParams changes (e.g. from dashboard navigation)
+  // Apply URL params when searchParams changes
   useEffect(() => {
     const urlSituacao = searchParams.get("situacao");
     const urlDataInicio = searchParams.get("dataInicio");
@@ -346,44 +248,28 @@ function ContasPage() {
     tipoFinanceiro: "",
   });
 
-  function openEditGrupo(grupoId: number) {
-    const parcelas = contas.filter((c) => c.parcelaGrupoId === grupoId);
-    if (parcelas.length === 0) return;
-    const first = parcelas[0];
-    setGrupoEditGrupoId(grupoId);
-    setGrupoEditForm({
-      fornecedorNome: first.fornecedorNome,
-      categoriaId: first.categoriaId ? String(first.categoriaId) : "",
-      subcategoriaId: first.subcategoriaId ? String(first.subcategoriaId) : "",
-      tipoFinanceiro: first.tipoFinanceiro ?? "",
-    });
-    setGrupoEditOpen(true);
-  }
-
   async function handleGrupoEditSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!grupoEditGrupoId) return;
-    const parcelas = contas.filter((c) => c.parcelaGrupoId === grupoEditGrupoId);
     const catId = grupoEditForm.categoriaId ? Number(grupoEditForm.categoriaId) : null;
     const catNome = catId ? (categorias.find((c) => c.id === catId)?.nome ?? "") : "";
-    const payload = {
-      fornecedorNome: grupoEditForm.fornecedorNome,
-      categoria: catNome,
-      categoriaId: catId,
-      subcategoriaId: grupoEditForm.subcategoriaId ? Number(grupoEditForm.subcategoriaId) : null,
-      tipoFinanceiro: grupoEditForm.tipoFinanceiro,
-    };
-    await Promise.all(
-      parcelas.map((p) =>
-        fetch(`/api/contas/${p.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        })
-      )
-    );
-    setGrupoEditOpen(false);
-    fetchContas();
+    try {
+      await fetch(`/api/contas/grupo/${grupoEditGrupoId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fornecedorNome: grupoEditForm.fornecedorNome,
+          categoria: catNome,
+          categoriaId: catId,
+          subcategoriaId: grupoEditForm.subcategoriaId ? Number(grupoEditForm.subcategoriaId) : null,
+          tipoFinanceiro: grupoEditForm.tipoFinanceiro,
+        }),
+      });
+      setGrupoEditOpen(false);
+      fetchContas();
+    } catch (e) {
+      console.error("Erro ao editar grupo:", e);
+    }
   }
 
   // Bulk selection
@@ -409,7 +295,7 @@ function ContasPage() {
         fetch(`/api/contas/${c.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ situacao: "Pago" }),
+          body: JSON.stringify({ situacao: "Pago", updatedAt: c.updatedAt }),
         })
       )
     );
@@ -425,7 +311,7 @@ function ContasPage() {
         fetch(`/api/contas/${c.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ situacao: "Pendente" }),
+          body: JSON.stringify({ situacao: "Pendente", updatedAt: c.updatedAt }),
         })
       )
     );
@@ -543,7 +429,6 @@ function ContasPage() {
     const catNome = catId ? (categorias.find((c) => c.id === catId)?.nome ?? "") : "";
     const totalParcelas = parseInt(contaForm.parcelas) || 1;
     const valorTotal = parseFloat(contaForm.valor);
-    const valorParcela = totalParcelas > 1 ? parseFloat((valorTotal / totalParcelas).toFixed(2)) : valorTotal;
     const baseBody = {
       fornecedorNome: contaForm.fornecedorNome,
       categoria: catNome,
@@ -558,38 +443,15 @@ function ContasPage() {
         await fetch(`/api/contas/${contaEditingId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...baseBody, valor: valorTotal, vencimento: contaForm.vencimento }),
+          body: JSON.stringify({ ...baseBody, valor: valorTotal, vencimento: contaForm.vencimento, updatedAt: contas.find((c) => c.id === contaEditingId)?.updatedAt }),
         });
       } else {
-        const baseDate = new Date(contaForm.vencimento + "T12:00:00");
-        const venc0Str = new Date(baseDate).toISOString().slice(0, 10);
-        const res0 = await fetch("/api/contas", {
+        // Server-side handles parcela creation in a transaction
+        await fetch("/api/contas", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...baseBody, valor: valorParcela, vencimento: venc0Str, parcelaNumero: 1 }),
+          body: JSON.stringify({ ...baseBody, valor: valorTotal, vencimento: contaForm.vencimento }),
         });
-        const first = await res0.json();
-        const grupoId = first.id;
-        await fetch(`/api/contas/${grupoId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ parcelaGrupoId: grupoId }),
-        });
-        for (let i = 1; i < totalParcelas; i++) {
-          const venc = new Date(baseDate);
-          venc.setMonth(venc.getMonth() + i);
-          await fetch("/api/contas", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              ...baseBody,
-              valor: valorParcela,
-              vencimento: venc.toISOString().slice(0, 10),
-              parcelaNumero: i + 1,
-              parcelaGrupoId: grupoId,
-            }),
-          });
-        }
       }
       setContaDialogOpen(false);
       setContaForm(emptyContaForm);
@@ -612,10 +474,11 @@ function ContasPage() {
 
   async function handleMarkPago(id: number) {
     try {
+      const conta = contas.find((c) => c.id === id);
       await fetch(`/api/contas/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ situacao: "Pago" }),
+        body: JSON.stringify({ situacao: "Pago", updatedAt: conta?.updatedAt }),
       });
       fetchContas();
     } catch (e) {
@@ -830,37 +693,6 @@ function ContasPage() {
     return conta.categoria || "";
   }
 
-  function getSubcategoriaNome(conta: Conta) {
-    if (!conta.subcategoriaId) return "";
-    return subcategorias.find((s) => s.id === conta.subcategoriaId)?.nome ?? "";
-  }
-
-  // Cell content for single / expanded parcela rows
-  function renderCell(col: ContaColKey, item: Conta) {
-    switch (col) {
-      case "fornecedor":
-        return <span>{item.fornecedorNome}</span>;
-      case "categoria":
-        return <span>{getCategoriaNome(item)}</span>;
-      case "subcategoria":
-        return <span className="text-sm text-muted-foreground">{getSubcategoriaNome(item) || "—"}</span>;
-      case "tipo":
-        return item.tipoFinanceiro ? (
-          <StatusBadge status={item.tipoFinanceiro} context="financeiro" />
-        ) : <span className="text-muted-foreground">—</span>;
-      case "parcelas":
-        return item.parcelas > 1 ? (
-          <span className="text-xs text-muted-foreground">{item.parcelaNumero}/{item.parcelas}x</span>
-        ) : <span className="text-muted-foreground">—</span>;
-      case "valor":
-        return <span>{formatPrice(item.valor)}</span>;
-      case "vencimento":
-        return <span>{formatDate(item.vencimento)}</span>;
-      case "situacao":
-        return getSituacaoBadge(item);
-    }
-  }
-
   // ── Render ──
 
   const tabs: { key: Tab; label: string; icon: typeof Receipt }[] = [
@@ -899,839 +731,126 @@ function ContasPage() {
       {/* Sub-tabs */}
       <TabsNav items={tabs} value={tab} onChange={(key) => setTab(key as Tab)} />
 
-      {/* ═══ CONTAS TAB ═══ */}
+      {/* CONTAS TAB */}
       {tab === "contas" && (
         <>
-          {/* Search + filters + columns + csv */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Buscar fornecedor..."
-                value={filterBusca}
-                onChange={(e) => setFilterBusca(e.target.value)}
-                className="pl-9 h-9"
-              />
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setFiltersOpen((v) => !v)}
-              className="h-9 gap-1.5"
-            >
-              <Filter className="size-4" />
-              <span className="hidden sm:inline">Filtros</span>
-              {activeFiltersCount > 0 && (
-                <Badge className="ml-0.5 h-4 min-w-4 px-1 text-[10px]">{activeFiltersCount}</Badge>
-              )}
-            </Button>
-            {activeFiltersCount > 0 && (
-              <Button variant="ghost" size="sm" onClick={resetFilters} className="h-9" title="Limpar filtros">
-                <RotateCcw className="size-4" />
-              </Button>
-            )}
-            <div className="relative" ref={colunasRef}>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setColunasOpen((v) => !v)}
-                className="h-9 gap-1.5"
-              >
-                <SlidersHorizontal className="size-4" />
-                <span className="hidden sm:inline">Colunas</span>
-              </Button>
-              {colunasOpen && (
-                <div className="absolute right-0 top-full mt-1 z-20 bg-card border rounded-lg shadow-lg p-3 space-y-1 min-w-[200px]">
-                  {colunasConfig.map((col, i) => (
-                    <div key={col.key} className="flex items-center gap-1">
-                      <label className="flex items-center gap-2 text-sm cursor-pointer flex-1">
-                        <input
-                          type="checkbox"
-                          checked={col.visible}
-                          onChange={() => toggleCol(col.key)}
-                          disabled={col.required}
-                        />
-                        {col.label}
-                      </label>
-                      <div className="flex gap-0.5">
-                        <button
-                          onClick={() => moveCol(i, -1)}
-                          disabled={i === 0}
-                          className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 rounded"
-                        >
-                          <ChevronUp className="size-3" />
-                        </button>
-                        <button
-                          onClick={() => moveCol(i, 1)}
-                          disabled={i === colunasConfig.length - 1}
-                          className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 rounded"
-                        >
-                          <ChevronDown className="size-3" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <Button variant="outline" size="sm" onClick={exportContasCSV} className="h-9 gap-1.5">
-              <Download className="size-4" />
-              <span className="hidden sm:inline">CSV</span>
-            </Button>
-          </div>
+          <ContaFilters
+            filterBusca={filterBusca}
+            setFilterBusca={setFilterBusca}
+            filtersOpen={filtersOpen}
+            setFiltersOpen={setFiltersOpen}
+            activeFiltersCount={activeFiltersCount}
+            resetFilters={resetFilters}
+            filterCategoriaId={filterCategoriaId}
+            setFilterCategoriaId={setFilterCategoriaId}
+            filterSubcategoriaId={filterSubcategoriaId}
+            setFilterSubcategoriaId={setFilterSubcategoriaId}
+            filterTipo={filterTipo}
+            setFilterTipo={setFilterTipo}
+            filterSituacao={filterSituacao}
+            setFilterSituacao={setFilterSituacao}
+            filterVencDe={filterVencDe}
+            setFilterVencDe={setFilterVencDe}
+            filterVencAte={filterVencAte}
+            setFilterVencAte={setFilterVencAte}
+            categorias={categorias}
+            subcategorias={subcategorias}
+            colunasConfig={colunasConfig}
+            colunasOpen={colunasOpen}
+            setColunasOpen={setColunasOpen}
+            colunasRef={colunasRef}
+            toggleCol={toggleCol}
+            moveCol={moveCol}
+            exportContasCSV={exportContasCSV}
+          />
 
-          {/* Filters panel */}
-          {filtersOpen && (
-            <div className="rounded-lg border bg-card p-3 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Categoria</Label>
-                <select
-                  value={filterCategoriaId}
-                  onChange={(e) => { setFilterCategoriaId(e.target.value); setFilterSubcategoriaId(""); }}
-                  className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                >
-                  <option value="">Todas</option>
-                  {categorias.map((c) => (
-                    <option key={c.id} value={c.id}>{c.nome}</option>
-                  ))}
-                </select>
-              </div>
-              {filterCategoriaId && (
-                <div className="space-y-1">
-                  <Label className="text-xs">Subcategoria</Label>
-                  <select
-                    value={filterSubcategoriaId}
-                    onChange={(e) => setFilterSubcategoriaId(e.target.value)}
-                    className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                  >
-                    <option value="">Todas</option>
-                    {subcategorias.filter((s) => s.categoriaId === Number(filterCategoriaId)).map((s) => (
-                      <option key={s.id} value={s.id}>{s.nome}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div className="space-y-1">
-                <Label className="text-xs">Tipo</Label>
-                <select
-                  value={filterTipo}
-                  onChange={(e) => setFilterTipo(e.target.value)}
-                  className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                >
-                  <option value="">Todos</option>
-                  <option value="CAPEX">CAPEX</option>
-                  <option value="OPEX">OPEX</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Situação</Label>
-                <select
-                  value={filterSituacao}
-                  onChange={(e) => setFilterSituacao(e.target.value)}
-                  className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                >
-                  <option value="">Todas</option>
-                  <option value="Pendente">Pendente</option>
-                  <option value="Vencida">Vencida</option>
-                  <option value="Pago">Pago</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Vencimento de</Label>
-                <Input type="date" value={filterVencDe} onChange={(e) => setFilterVencDe(e.target.value)} className="h-8 text-sm" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Vencimento até</Label>
-                <Input type="date" value={filterVencAte} onChange={(e) => setFilterVencAte(e.target.value)} className="h-8 text-sm" />
-              </div>
-            </div>
-          )}
+          <ContaTable
+            contas={contas}
+            filteredContas={filteredContas}
+            contasLoading={contasLoading}
+            categorias={categorias}
+            subcategorias={subcategorias}
+            visCols={visCols}
+            sortField={sortField}
+            sortDir={sortDir}
+            setSortField={setSortField}
+            setSortDir={setSortDir}
+            selectedIds={selectedIds}
+            toggleSelect={toggleSelect}
+            toggleSelectAll={toggleSelectAll}
+            expandedGrupos={expandedGrupos}
+            toggleGrupo={toggleGrupo}
+            activeFiltersCount={activeFiltersCount}
+            onEditConta={openEditConta}
+            onDeleteConta={handleDeleteConta}
+            onMarkPago={handleMarkPago}
+            onBulkPago={handleBulkPago}
+            onBulkPendente={handleBulkPendente}
+            onBulkDelete={handleBulkDelete}
+            onClearSelection={() => setSelectedIds(new Set())}
+          />
 
-          {/* Bulk actions bar */}
-          {selectedIds.size > 0 && (
-            <div className="flex items-center gap-2 flex-wrap rounded-lg border border-primary/30 bg-primary/5 px-4 py-2">
-              <span className="text-sm font-medium">{selectedIds.size} selecionada{selectedIds.size !== 1 ? "s" : ""}</span>
-              <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700" onClick={handleBulkPago}>
-                <Check className="size-3 mr-1" />
-                Marcar Pago
-              </Button>
-              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleBulkPendente}>
-                <RotateCw className="size-3 mr-1" />
-                Marcar Pendente
-              </Button>
-              <Button size="sm" variant="destructive" className="h-7 text-xs" onClick={handleBulkDelete}>
-                <Trash2 className="size-3 mr-1" />
-                Excluir
-              </Button>
-              <Button size="sm" variant="ghost" className="h-7 text-xs ml-auto" onClick={() => setSelectedIds(new Set())}>
-                Cancelar
-              </Button>
-            </div>
-          )}
-
-          <div className="rounded-lg border overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">
-                    <input
-                      type="checkbox"
-                      checked={filteredContas.length > 0 && filteredContas.every((c) => selectedIds.has(c.id))}
-                      onChange={toggleSelectAll}
-                      className="size-4 accent-primary cursor-pointer"
-                    />
-                  </TableHead>
-                  {visCols.map((col) => (
-                    <TableHead key={col.key}>
-                      <button
-                        type="button"
-                        className="flex items-center gap-1 hover:text-foreground transition-colors"
-                        onClick={() => {
-                          if (sortField === col.key) {
-                            setSortDir(sortDir === "asc" ? "desc" : "asc");
-                          } else {
-                            setSortField(col.key);
-                            setSortDir("asc");
-                          }
-                        }}
-                      >
-                        {col.label}
-                        {sortField === col.key && (
-                          sortDir === "asc" ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />
-                        )}
-                      </button>
-                    </TableHead>
-                  ))}
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {contasLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={visCols.length + 2}>
-                      <TableSkeleton rows={5} cols={visCols.length} />
-                    </TableCell>
-                  </TableRow>
-                ) : filteredContas.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={visCols.length + 2}>
-                      <EmptyState icon={Receipt} title={activeFiltersCount > 0 ? "Nenhuma conta com esses filtros." : "Nenhuma conta cadastrada"} />
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  (() => {
-                    const renderedGrupos = new Set<number>();
-                    const renderedSyntheticGrupos = new Set<string>();
-                    const rows: React.ReactNode[] = [];
-
-                    for (const item of filteredContas) {
-                      const syntheticKey =
-                        item.parcelas > 1 && !item.parcelaGrupoId
-                          ? `${item.fornecedorNome}_${item.categoriaId ?? ""}_${item.parcelas}`
-                          : null;
-                      const effectiveGrupoId = item.parcelaGrupoId;
-
-                      if (item.parcelas > 1 && (effectiveGrupoId || syntheticKey)) {
-                        if (effectiveGrupoId) {
-                          if (renderedGrupos.has(effectiveGrupoId)) continue;
-                          renderedGrupos.add(effectiveGrupoId);
-                        } else if (syntheticKey) {
-                          if (renderedSyntheticGrupos.has(syntheticKey)) continue;
-                          renderedSyntheticGrupos.add(syntheticKey);
-                        }
-
-                        const grupo2 = effectiveGrupoId
-                          ? contas.filter((c) => c.parcelaGrupoId === effectiveGrupoId)
-                          : contas.filter(
-                              (c) =>
-                                !c.parcelaGrupoId &&
-                                c.parcelas === item.parcelas &&
-                                c.fornecedorNome === item.fornecedorNome &&
-                                c.categoriaId === item.categoriaId
-                            );
-
-                        const expandKey = effectiveGrupoId ? String(effectiveGrupoId) : (syntheticKey ?? "");
-                        const expanded = expandedGrupos.has(expandKey);
-                        const pagas = grupo2.filter((c) => c.situacao === "Pago").length;
-                        const totalGrupo = grupo2.reduce((s, c) => s + c.valor, 0);
-                        const nextPendente = grupo2
-                          .filter((c) => c.situacao !== "Pago")
-                          .sort((a, b) => a.vencimento.localeCompare(b.vencimento))[0];
-                        const grupoAllSelected = grupo2.every((c) => selectedIds.has(c.id));
-                        const toggleThisGrupo = () => {
-                          const ids2 = grupo2.map((c) => c.id);
-                          const allSel = ids2.every((id) => selectedIds.has(id));
-                          setSelectedIds((prev) => {
-                            const n = new Set(prev);
-                            if (allSel) ids2.forEach((id) => n.delete(id));
-                            else ids2.forEach((id) => n.add(id));
-                            return n;
-                          });
-                        };
-
-                        // Group header row
-                        rows.push(
-                          <TableRow
-                            key={`grupo-${expandKey}`}
-                            className={`cursor-pointer transition-colors ${nextPendente ? getRowClassName(nextPendente) : ""}`}
-                            onClick={() => toggleGrupo(expandKey)}
-                          >
-                            <TableCell onClick={(e) => { e.stopPropagation(); toggleThisGrupo(); }}>
-                              <input
-                                type="checkbox"
-                                checked={grupoAllSelected}
-                                onChange={toggleThisGrupo}
-                                className="size-4 accent-primary cursor-pointer"
-                              />
-                            </TableCell>
-                            {visCols.map((col) => {
-                              if (col.key === "fornecedor") return (
-                                <TableCell key="fornecedor" className="font-medium">
-                                  <div className="flex items-center gap-2">
-                                    <span className={`text-xs transition-transform ${expanded ? "rotate-90" : ""}`}>▶</span>
-                                    {item.fornecedorNome}
-                                  </div>
-                                </TableCell>
-                              );
-                              if (col.key === "categoria") return (
-                                <TableCell key="categoria">{getCategoriaNome(item)}</TableCell>
-                              );
-                              if (col.key === "subcategoria") return (
-                                <TableCell key="subcategoria">
-                                  <span className="text-sm text-muted-foreground">{getSubcategoriaNome(item) || "—"}</span>
-                                </TableCell>
-                              );
-                              if (col.key === "tipo") return (
-                                <TableCell key="tipo">
-                                  {item.tipoFinanceiro ? <StatusBadge status={item.tipoFinanceiro} context="financeiro" /> : <span className="text-muted-foreground">—</span>}
-                                </TableCell>
-                              );
-                              if (col.key === "parcelas") return (
-                                <TableCell key="parcelas">
-                                  <span className="text-xs text-muted-foreground">{pagas}/{grupo2.length}x pagas</span>
-                                </TableCell>
-                              );
-                              if (col.key === "valor") return (
-                                <TableCell key="valor">{formatPrice(totalGrupo)}</TableCell>
-                              );
-                              if (col.key === "vencimento") return (
-                                <TableCell key="vencimento">{nextPendente ? formatDate(nextPendente.vencimento) : "—"}</TableCell>
-                              );
-                              if (col.key === "situacao") return (
-                                <TableCell key="situacao">
-                                  {pagas === grupo2.length
-                                    ? <StatusBadge status="Pago" context="conta" />
-                                    : <Badge className="bg-yellow-500 text-white">{pagas}/{grupo2.length}</Badge>
-                                  }
-                                </TableCell>
-                              );
-                              return <TableCell key={col.key} />;
-                            })}
-                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                              <div className="flex items-center justify-end gap-1">
-                                <span className="text-xs text-muted-foreground">{grupo2.length}x de {formatPrice(item.valor)}</span>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-
-                        // Expanded parcela rows
-                        if (expanded) {
-                          for (const parcela of [...grupo2].sort((a, b) => a.parcelaNumero - b.parcelaNumero)) {
-                            rows.push(
-                              <TableRow
-                                key={parcela.id}
-                                className={`transition-colors ${getRowClassName(parcela)}`}
-                                onDoubleClick={() => openEditConta(parcela)}
-                              >
-                                <TableCell onClick={(e) => e.stopPropagation()}>
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedIds.has(parcela.id)}
-                                    onChange={() => toggleSelect(parcela.id)}
-                                    className="size-4 accent-primary cursor-pointer"
-                                  />
-                                </TableCell>
-                                {visCols.map((col) => {
-                                  if (col.key === "fornecedor") return (
-                                    <TableCell key="fornecedor" className="font-medium pl-8 text-muted-foreground text-sm">
-                                      Parcela {parcela.parcelaNumero}/{parcela.parcelas}
-                                    </TableCell>
-                                  );
-                                  if (col.key === "valor") return (
-                                    <TableCell key="valor" className="text-sm">{formatPrice(parcela.valor)}</TableCell>
-                                  );
-                                  if (col.key === "vencimento") return (
-                                    <TableCell key="vencimento" className="text-sm">{formatDate(parcela.vencimento)}</TableCell>
-                                  );
-                                  if (col.key === "situacao") return (
-                                    <TableCell key="situacao">{getSituacaoBadge(parcela)}</TableCell>
-                                  );
-                                  return <TableCell key={col.key} />;
-                                })}
-                                <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                                  <div className="flex items-center justify-end gap-1">
-                                    {parcela.situacao === "Pendente" && (
-                                      <Button variant="ghost" size="icon-sm" onClick={() => handleMarkPago(parcela.id)} title="Marcar como pago">
-                                        <Check className="size-4 text-green-500" />
-                                      </Button>
-                                    )}
-                                    <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteConta(parcela.id)} title="Excluir">
-                                      <Trash2 className="size-4 text-destructive" />
-                                    </Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          }
-                        }
-                      } else {
-                        // Single conta row
-                        rows.push(
-                          <TableRow
-                            key={item.id}
-                            className={`cursor-pointer transition-colors ${getRowClassName(item)}`}
-                            onDoubleClick={() => openEditConta(item)}
-                          >
-                            <TableCell onClick={(e) => e.stopPropagation()}>
-                              <input
-                                type="checkbox"
-                                checked={selectedIds.has(item.id)}
-                                onChange={() => toggleSelect(item.id)}
-                                className="size-4 accent-primary cursor-pointer"
-                              />
-                            </TableCell>
-                            {visCols.map((col) => (
-                              <TableCell key={col.key} className={col.key === "fornecedor" ? "font-medium" : ""}>
-                                {renderCell(col.key, item)}
-                              </TableCell>
-                            ))}
-                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                              <div className="flex items-center justify-end gap-1">
-                                {item.situacao === "Pendente" && (
-                                  <Button variant="ghost" size="icon-sm" onClick={() => handleMarkPago(item.id)} title="Marcar como pago">
-                                    <Check className="size-4 text-green-500" />
-                                  </Button>
-                                )}
-                                <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteConta(item.id)} title="Excluir">
-                                  <Trash2 className="size-4 text-destructive" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      }
-                    }
-                    return rows;
-                  })()
-                )}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Conta Dialog */}
-          <Dialog open={contaDialogOpen} onOpenChange={setContaDialogOpen}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>{contaEditingId ? "Editar Conta" : "Nova Conta"}</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleContaSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="fornecedor">Fornecedor</Label>
-                  <select
-                    id="fornecedor"
-                    value={contaForm.fornecedorNome}
-                    onChange={(e) => setContaForm({ ...contaForm, fornecedorNome: e.target.value })}
-                    className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                    required
-                  >
-                    <option value="">Selecione...</option>
-                    {fornecedorNames.map((s) => (<option key={s} value={s}>{s}</option>))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="categoria">Categoria</Label>
-                  <select
-                    id="categoria"
-                    value={contaForm.categoriaId}
-                    onChange={(e) => setContaForm({ ...contaForm, categoriaId: e.target.value, subcategoriaId: "" })}
-                    className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                  >
-                    <option value="">Sem categoria</option>
-                    {categorias.map((c) => (
-                      <option key={c.id} value={c.id}>{c.nome}</option>
-                    ))}
-                  </select>
-                </div>
-                {contaForm.categoriaId && (
-                  <div className="space-y-2">
-                    <Label htmlFor="subcategoriaId">Subcategoria</Label>
-                    <select
-                      id="subcategoriaId"
-                      value={contaForm.subcategoriaId}
-                      onChange={(e) => setContaForm({ ...contaForm, subcategoriaId: e.target.value })}
-                      className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                    >
-                      <option value="">Sem subcategoria</option>
-                      {subcategorias
-                        .filter((s) => s.categoriaId === Number(contaForm.categoriaId))
-                        .map((s) => (
-                          <option key={s.id} value={s.id}>{s.nome}</option>
-                        ))}
-                    </select>
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <Label htmlFor="tipoFinanceiro">Tipo Financeiro</Label>
-                  <select
-                    id="tipoFinanceiro"
-                    value={contaForm.tipoFinanceiro}
-                    onChange={(e) => setContaForm({ ...contaForm, tipoFinanceiro: e.target.value })}
-                    className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                  >
-                    <option value="">Sem classificação</option>
-                    <option value="CAPEX">CAPEX (Investimento)</option>
-                    <option value="OPEX">OPEX (Operacional)</option>
-                  </select>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="valor">{contaEditingId ? "Valor" : "Valor total"}</Label>
-                    <Input
-                      id="valor"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={contaForm.valor}
-                      onChange={(e) => setContaForm({ ...contaForm, valor: e.target.value })}
-                      required
-                    />
-                  </div>
-                  {!contaEditingId && (
-                    <div className="space-y-2">
-                      <Label htmlFor="parcelas">Parcelas</Label>
-                      <select
-                        id="parcelas"
-                        value={contaForm.parcelas}
-                        onChange={(e) => setContaForm({ ...contaForm, parcelas: e.target.value })}
-                        className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                      >
-                        <option value="1">À vista (1x)</option>
-                        <option value="2">2x</option>
-                        <option value="3">3x</option>
-                        <option value="4">4x</option>
-                        <option value="5">5x</option>
-                        <option value="6">6x</option>
-                        <option value="12">12x</option>
-                        <option value="24">24x</option>
-                      </select>
-                    </div>
-                  )}
-                </div>
-                {!contaEditingId && parseInt(contaForm.parcelas) > 1 && contaForm.valor && (
-                  <p className="text-xs text-muted-foreground -mt-2">
-                    {contaForm.parcelas}x de {formatPrice(parseFloat(contaForm.valor) / parseInt(contaForm.parcelas))} — 1ª parcela no vencimento escolhido
-                  </p>
-                )}
-                <div className="space-y-2">
-                  <Label htmlFor="vencimento">
-                    {parseInt(contaForm.parcelas) > 1 ? "Vencimento da 1ª parcela" : "Vencimento"}
-                  </Label>
-                  <Input
-                    id="vencimento"
-                    type="date"
-                    value={contaForm.vencimento}
-                    onChange={(e) => setContaForm({ ...contaForm, vencimento: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Situação</Label>
-                  <select
-                    value={contaForm.situacao}
-                    onChange={(e) => setContaForm({ ...contaForm, situacao: e.target.value })}
-                    className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                  >
-                    <option value="Pendente">Pendente</option>
-                    <option value="Pago">Pago</option>
-                  </select>
-                </div>
-                <DialogFooter>
-                  <Button type="submit">{contaEditingId ? "Salvar" : "Criar"}</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-
-          {/* Group Edit Dialog */}
-          <Dialog open={grupoEditOpen} onOpenChange={setGrupoEditOpen}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Editar Grupo de Parcelas</DialogTitle>
-              </DialogHeader>
-              <p className="text-sm text-muted-foreground">
-                Edita os dados comuns de todas as parcelas do grupo.
-              </p>
-              <form onSubmit={handleGrupoEditSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Fornecedor</Label>
-                  <Input
-                    list="grupo-forn-suggestions"
-                    value={grupoEditForm.fornecedorNome}
-                    onChange={(e) => setGrupoEditForm({ ...grupoEditForm, fornecedorNome: e.target.value })}
-                    required
-                  />
-                  <datalist id="grupo-forn-suggestions">
-                    {fornecedorNames.map((s) => (<option key={s} value={s} />))}
-                  </datalist>
-                </div>
-                <div className="space-y-2">
-                  <Label>Categoria</Label>
-                  <select
-                    value={grupoEditForm.categoriaId}
-                    onChange={(e) => setGrupoEditForm({ ...grupoEditForm, categoriaId: e.target.value, subcategoriaId: "" })}
-                    className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                  >
-                    <option value="">Sem categoria</option>
-                    {categorias.map((c) => (
-                      <option key={c.id} value={c.id}>{c.nome}</option>
-                    ))}
-                  </select>
-                </div>
-                {grupoEditForm.categoriaId && (
-                  <div className="space-y-2">
-                    <Label>Subcategoria</Label>
-                    <select
-                      value={grupoEditForm.subcategoriaId}
-                      onChange={(e) => setGrupoEditForm({ ...grupoEditForm, subcategoriaId: e.target.value })}
-                      className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                    >
-                      <option value="">Sem subcategoria</option>
-                      {subcategorias
-                        .filter((s) => s.categoriaId === Number(grupoEditForm.categoriaId))
-                        .map((s) => (
-                          <option key={s.id} value={s.id}>{s.nome}</option>
-                        ))}
-                    </select>
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <Label>Tipo Financeiro</Label>
-                  <select
-                    value={grupoEditForm.tipoFinanceiro}
-                    onChange={(e) => setGrupoEditForm({ ...grupoEditForm, tipoFinanceiro: e.target.value })}
-                    className="flex h-8 w-full items-center rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
-                  >
-                    <option value="">Sem classificação</option>
-                    <option value="CAPEX">CAPEX (Investimento)</option>
-                    <option value="OPEX">OPEX (Operacional)</option>
-                  </select>
-                </div>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setGrupoEditOpen(false)}>Cancelar</Button>
-                  <Button type="submit">Salvar Grupo</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <ContaFormDialog
+            contaDialogOpen={contaDialogOpen}
+            setContaDialogOpen={setContaDialogOpen}
+            contaForm={contaForm}
+            setContaForm={setContaForm}
+            contaEditingId={contaEditingId}
+            onContaSubmit={handleContaSubmit}
+            fornecedorNames={fornecedorNames}
+            categorias={categorias}
+            subcategorias={subcategorias}
+            grupoEditOpen={grupoEditOpen}
+            setGrupoEditOpen={setGrupoEditOpen}
+            grupoEditForm={grupoEditForm}
+            setGrupoEditForm={setGrupoEditForm}
+            onGrupoEditSubmit={handleGrupoEditSubmit}
+          />
         </>
       )}
 
-      {/* ═══ FORNECEDORES TAB ═══ */}
+      {/* FORNECEDORES TAB */}
       {tab === "fornecedores" && (
-        <>
-          <div className="flex justify-end">
-            <Button variant="outline" size="sm" onClick={exportFornecedoresCSV} className="h-9 gap-1.5">
-              <Download className="size-4" />
-              <span className="hidden sm:inline">CSV</span>
-            </Button>
-          </div>
-          <div className="rounded-lg border overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead className="text-center">Contas</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {fornecedoresLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={3}>
-                      <TableSkeleton rows={4} cols={3} />
-                    </TableCell>
-                  </TableRow>
-                ) : fornecedores.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={3}>
-                      <EmptyState icon={Store} title="Nenhum fornecedor cadastrado" />
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  fornecedores.map((item) => (
-                    <TableRow
-                      key={item.id}
-                      className="cursor-pointer transition-colors"
-                      onDoubleClick={() => openEditFornecedor(item)}
-                    >
-                      <TableCell className="font-medium">{item.nome}</TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant="outline">{item._count.contas}</Badge>
-                      </TableCell>
-                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteFornecedor(item.id)} title="Excluir">
-                            <Trash2 className="size-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Fornecedor Dialog */}
-          <Dialog open={fornecedorDialogOpen} onOpenChange={setFornecedorDialogOpen}>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>{fornecedorEditingId ? "Editar Fornecedor" : "Novo Fornecedor"}</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleFornecedorSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="nome">Nome</Label>
-                  <Input
-                    id="nome"
-                    value={fornecedorNome}
-                    onChange={(e) => setFornecedorNome(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                </div>
-                {fornecedorError && <p className="text-sm text-destructive">{fornecedorError}</p>}
-                <DialogFooter>
-                  <Button type="submit">{fornecedorEditingId ? "Salvar" : "Criar"}</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </>
+        <FornecedoresTab
+          fornecedores={fornecedores}
+          fornecedoresLoading={fornecedoresLoading}
+          fornecedorDialogOpen={fornecedorDialogOpen}
+          setFornecedorDialogOpen={setFornecedorDialogOpen}
+          fornecedorNome={fornecedorNome}
+          setFornecedorNome={setFornecedorNome}
+          fornecedorEditingId={fornecedorEditingId}
+          fornecedorError={fornecedorError}
+          onFornecedorSubmit={handleFornecedorSubmit}
+          onEditFornecedor={openEditFornecedor}
+          onDeleteFornecedor={handleDeleteFornecedor}
+          exportFornecedoresCSV={exportFornecedoresCSV}
+        />
       )}
 
-      {/* ═══ CATEGORIAS TAB ═══ */}
+      {/* CATEGORIAS TAB */}
       {tab === "categorias" && (
-        <>
-          {categoriasLoading ? (
-            <TableSkeleton rows={4} cols={2} />
-          ) : categorias.length === 0 ? (
-            <EmptyState icon={Tag} title="Nenhuma categoria cadastrada" />
-          ) : (
-            <div className="space-y-3">
-              {categorias.map((cat) => {
-                const catSubcategorias = subcategorias.filter((s) => s.categoriaId === cat.id);
-                return (
-                  <div key={cat.id} className="rounded-lg border p-4 space-y-3">
-                    <div
-                      className="flex items-center justify-between"
-                      onDoubleClick={() => openEditCategoria(cat)}
-                      title="Duplo clique para renomear"
-                    >
-                      <div className="flex items-center gap-2 cursor-pointer select-none">
-                        <span className="font-medium">{cat.nome}</span>
-                        <Badge variant="outline" className="text-xs">{cat._count.contas} contas</Badge>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => openNewSubcategoria(cat.id)}
-                          title="Adicionar subcategoria"
-                        >
-                          <Plus className="size-4 text-muted-foreground" />
-                        </Button>
-                        <Button variant="ghost" size="icon-sm" onClick={() => handleDeleteCategoria(cat.id)} title="Excluir">
-                          <Trash2 className="size-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </div>
-                    {catSubcategorias.length > 0 && (
-                      <div className="flex flex-wrap gap-2 pl-1">
-                        {catSubcategorias.map((sub) => (
-                          <div
-                            key={sub.id}
-                            className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs bg-muted/30"
-                          >
-                            <span>{sub.nome}</span>
-                            <span className="text-muted-foreground">({sub._count.contas})</span>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteSubcategoria(sub.id)}
-                              className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
-                            >
-                              <Trash2 className="size-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Categoria Dialog */}
-          <Dialog open={categoriaDialogOpen} onOpenChange={setCategoriaDialogOpen}>
-            <DialogContent className="sm:max-w-sm">
-              <DialogHeader>
-                <DialogTitle>{categoriaEditingId ? "Editar Categoria" : "Nova Categoria"}</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleCategoriaSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="catNome">Nome</Label>
-                  <Input
-                    id="catNome"
-                    value={categoriaNome}
-                    onChange={(e) => setCategoriaNome(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                </div>
-                {categoriaError && <p className="text-sm text-destructive">{categoriaError}</p>}
-                <DialogFooter>
-                  <Button type="submit">{categoriaEditingId ? "Salvar" : "Criar"}</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-
-          {/* Subcategoria Dialog */}
-          <Dialog open={subcategoriaDialogOpen} onOpenChange={setSubcategoriaDialogOpen}>
-            <DialogContent className="sm:max-w-sm">
-              <DialogHeader>
-                <DialogTitle>Nova Subcategoria</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubcategoriaSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="subNome">Nome</Label>
-                  <Input
-                    id="subNome"
-                    value={subcategoriaNome}
-                    onChange={(e) => setSubcategoriaNome(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                </div>
-                {subcategoriaError && <p className="text-sm text-destructive">{subcategoriaError}</p>}
-                <DialogFooter>
-                  <Button type="submit">Criar</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </>
+        <CategoriasTab
+          categorias={categorias}
+          categoriasLoading={categoriasLoading}
+          subcategorias={subcategorias}
+          categoriaDialogOpen={categoriaDialogOpen}
+          setCategoriaDialogOpen={setCategoriaDialogOpen}
+          categoriaNome={categoriaNome}
+          setCategoriaNome={setCategoriaNome}
+          categoriaEditingId={categoriaEditingId}
+          categoriaError={categoriaError}
+          onCategoriaSubmit={handleCategoriaSubmit}
+          onEditCategoria={openEditCategoria}
+          onDeleteCategoria={handleDeleteCategoria}
+          subcategoriaDialogOpen={subcategoriaDialogOpen}
+          setSubcategoriaDialogOpen={setSubcategoriaDialogOpen}
+          subcategoriaNome={subcategoriaNome}
+          setSubcategoriaNome={setSubcategoriaNome}
+          subcategoriaError={subcategoriaError}
+          onNewSubcategoria={openNewSubcategoria}
+          onSubcategoriaSubmit={handleSubcategoriaSubmit}
+          onDeleteSubcategoria={handleDeleteSubcategoria}
+        />
       )}
     </div>
   );

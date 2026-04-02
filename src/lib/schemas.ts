@@ -110,6 +110,7 @@ export const pedidoUpdateSchema = z.object({
   valorPago: z.number().min(0).optional(),
   ordemRota: z.number().int().min(0).optional().nullable(),
   itens: z.array(pedidoItemInput).min(1).optional(),
+  updatedAt: z.string().optional(),
 });
 
 export const pedidoBulkSchema = z.object({
@@ -154,6 +155,7 @@ export const contaUpdateSchema = z.object({
   parcelas: z.number().int().min(1).optional(),
   parcelaNumero: z.number().int().min(1).optional(),
   parcelaGrupoId: z.number().int().positive().optional().nullable(),
+  updatedAt: z.string().optional(),
 });
 
 // ─── Fornecedor ─────────────────────────────────────────────────────────

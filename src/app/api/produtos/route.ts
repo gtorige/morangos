@@ -8,7 +8,9 @@ export async function GET() {
     const produtos = await prisma.produto.findMany({
       orderBy: { nome: "asc" },
     });
-    return NextResponse.json(produtos);
+    const res = NextResponse.json(produtos);
+    res.headers.set("Cache-Control", "s-maxage=30, stale-while-revalidate=60");
+    return res;
   });
 }
 

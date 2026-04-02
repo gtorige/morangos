@@ -147,63 +147,71 @@ export async function generateRecurringOrders(opts: {
   const inicio = new Date(opts.dataInicio + "T12:00:00");
   const fim = new Date(opts.dataFim + "T12:00:00");
 
-  let pedidosCriados = 0;
+  // Collect all target dates first
+  const targetDates: string[] = [];
   const current = new Date(inicio);
-
   while (current <= fim) {
-    const dayOfWeek = current.getDay();
-    if (diasArr.includes(dayOfWeek)) {
+    if (diasArr.includes(current.getDay())) {
       const dateStr = dateToStr(current);
-
-      if (opts.skipDate && dateStr === opts.skipDate) {
-        current.setDate(current.getDate() + 1);
-        continue;
-      }
-
-      // Check if already exists
-      const existing = await prisma.pedido.findFirst({
-        where: { recorrenteId: opts.recorrenteId, dataEntrega: dateStr },
-      });
-
-      if (!existing) {
-        const pedidoItens = opts.itens.map((item) => {
-          const preco = item.precoManual ?? item.produto.preco;
-          return {
-            produtoId: item.produtoId,
-            quantidade: item.quantidade,
-            precoUnitario: preco,
-            subtotal: preco * item.quantidade,
-          };
-        });
-
-        const totalItens = pedidoItens.reduce((a, i) => a + i.subtotal, 0);
-        const total = totalItens + opts.taxaEntrega;
-
-        await prisma.pedido.create({
-          data: {
-            clienteId: opts.clienteId,
-            dataPedido: dateStr,
-            dataEntrega: dateStr,
-            formaPagamentoId: opts.formaPagamentoId,
-            total,
-            valorPago: 0,
-            situacaoPagamento: "Pendente",
-            statusEntrega: "Pendente",
-            taxaEntrega: opts.taxaEntrega,
-            observacoes: opts.observacoes
-              ? `[Recorrente] ${opts.observacoes}`
-              : "[Recorrente]",
-            recorrenteId: opts.recorrenteId,
-            itens: { create: pedidoItens },
-          },
-        });
-        pedidosCriados++;
+      if (!(opts.skipDate && dateStr === opts.skipDate)) {
+        targetDates.push(dateStr);
       }
     }
     current.setDate(current.getDate() + 1);
   }
 
-  return pedidosCriados;
+  if (targetDates.length === 0) return 0;
+
+  // All-or-nothing: create all recurring orders in a single transaction
+  return prisma.$transaction(async (tx) => {
+    let pedidosCriados = 0;
+
+    // Batch check which dates already have orders
+    const existingPedidos = await tx.pedido.findMany({
+      where: { recorrenteId: opts.recorrenteId, dataEntrega: { in: targetDates } },
+      select: { dataEntrega: true },
+    });
+    const existingDates = new Set(existingPedidos.map((p) => p.dataEntrega));
+
+    for (const dateStr of targetDates) {
+      if (existingDates.has(dateStr)) continue;
+
+      const pedidoItens = opts.itens.map((item) => {
+        const preco = item.precoManual ?? item.produto.preco;
+        return {
+          produtoId: item.produtoId,
+          quantidade: item.quantidade,
+          precoUnitario: preco,
+          subtotal: preco * item.quantidade,
+        };
+      });
+
+      const totalItens = pedidoItens.reduce((a, i) => a + i.subtotal, 0);
+      const total = totalItens + opts.taxaEntrega;
+
+      await tx.pedido.create({
+        data: {
+          clienteId: opts.clienteId,
+          dataPedido: dateStr,
+          dataEntrega: dateStr,
+          formaPagamentoId: opts.formaPagamentoId,
+          total,
+          valorPago: 0,
+          situacaoPagamento: "Pendente",
+          statusEntrega: "Pendente",
+          taxaEntrega: opts.taxaEntrega,
+          observacoes: opts.observacoes
+            ? `[Recorrente] ${opts.observacoes}`
+            : "[Recorrente]",
+          recorrenteId: opts.recorrenteId,
+          itens: { create: pedidoItens },
+        },
+      });
+      pedidosCriados++;
+    }
+
+    return pedidosCriados;
+  });
 }
 
 /** @deprecated Use addDays from @/lib/formatting instead */

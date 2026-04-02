@@ -58,6 +58,7 @@ export default function EditarPedidoPage() {
   const [itens, setItens] = useState<ItemPedido[]>([]);
   const [taxaEntregaAtiva, setTaxaEntregaAtiva] = useState(false);
   const [taxaEntregaValor, setTaxaEntregaValor] = useState(5.0);
+  const [updatedAt, setUpdatedAt] = useState<string | undefined>(undefined);
 
   // Product autocomplete state per item
   const [produtoSearches, setProdutoSearches] = useState<Record<number, string>>({});
@@ -153,6 +154,7 @@ export default function EditarPedidoPage() {
       const taxa = pedido.taxaEntrega ?? 0;
       setTaxaEntregaAtiva(taxa > 0);
       setTaxaEntregaValor(taxa > 0 ? taxa : 5.0);
+      setUpdatedAt(pedido.updatedAt);
       const mappedItens = pedido.itens.map((item) => ({
         produtoId: String(item.produtoId),
         quantidade: String(item.quantidade),
@@ -381,6 +383,7 @@ export default function EditarPedidoPage() {
         statusEntrega,
         ordemRota: ordemRota ? Number(ordemRota) : null,
         taxaEntrega,
+        updatedAt,
         itens: itens.map((item) => ({
           produtoId: Number(item.produtoId),
           quantidade: Number(item.quantidade),
