@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { withAuth, parseBody, parseId } from "@/lib/api-helpers";
+import { withAuth, parseBody, parseId, checkOptimisticLock } from "@/lib/api-helpers";
 import { contaUpdateSchema } from "@/lib/schemas";
 
 export async function GET(
@@ -33,11 +33,17 @@ export async function PUT(
   return withAuth(async () => {
     const { id } = await params;
     const idNum = parseId(id);
-    const data = await parseBody(request, contaUpdateSchema);
+    const body = await parseBody(request, contaUpdateSchema);
+    const { updatedAt: bodyUpdatedAt, ...data } = body;
 
-    const conta = await prisma.conta.update({
-      where: { id: idNum },
-      data,
+    // Optimistic locking atômico dentro da transação
+    const conta = await prisma.$transaction(async (tx) => {
+      const existing = await tx.conta.findUnique({ where: { id: idNum }, select: { updatedAt: true } });
+      const newUpdatedAt = checkOptimisticLock(bodyUpdatedAt, existing?.updatedAt);
+      return tx.conta.update({
+        where: { id: idNum },
+        data: { ...data, updatedAt: newUpdatedAt },
+      });
     });
 
     return NextResponse.json(conta);
@@ -52,7 +58,33 @@ export async function DELETE(
     const { id } = await params;
     const idNum = parseId(id);
 
-    await prisma.conta.delete({ where: { id: idNum } });
+    // Se a conta é âncora de um grupo de parcelas, excluir todo o grupo
+    const conta = await prisma.conta.findUnique({
+      where: { id: idNum },
+      select: { parcelaGrupoId: true },
+    });
+
+    if (conta?.parcelaGrupoId) {
+      // Conta pertence a um grupo — excluir todas as parcelas do grupo
+      await prisma.conta.deleteMany({
+        where: { parcelaGrupoId: conta.parcelaGrupoId },
+      });
+    } else {
+      // Verificar se outras contas apontam para esta como grupo
+      const dependents = await prisma.conta.count({
+        where: { parcelaGrupoId: idNum, id: { not: idNum } },
+      });
+      if (dependents > 0) {
+        // Esta conta é âncora — excluir todo o grupo
+        await prisma.conta.deleteMany({
+          where: { parcelaGrupoId: idNum },
+        });
+      }
+      await prisma.conta.delete({ where: { id: idNum } }).catch(() => {
+        // Já foi excluída pelo deleteMany acima se era parte do grupo
+      });
+    }
+
     return NextResponse.json({ message: "Conta excluída com sucesso" });
   });
 }

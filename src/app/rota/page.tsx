@@ -62,6 +62,7 @@ interface Pedido {
   situacaoPagamento: string;
   observacoes: string;
   ordemRota: number | null;
+  updatedAt?: string;
   cliente: Cliente;
   itens: PedidoItem[];
 }
@@ -453,7 +454,7 @@ export default function RotaPage() {
       await fetch(`/api/pedidos/${pedido.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ statusEntrega: "Entregue" }),
+        body: JSON.stringify({ statusEntrega: "Entregue", updatedAt: pedido.updatedAt }),
       });
       await fetchRota();
     } catch (error) {
@@ -469,7 +470,7 @@ export default function RotaPage() {
       await fetch(`/api/pedidos/${pedido.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ situacaoPagamento: "Pago", valorPago: pedido.total }),
+        body: JSON.stringify({ situacaoPagamento: "Pago", valorPago: pedido.total, updatedAt: pedido.updatedAt }),
       });
       await fetchRota();
     } catch (error) {
@@ -488,7 +489,7 @@ export default function RotaPage() {
           fetch(`/api/pedidos/${p.id}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ statusEntrega: "Em rota" }),
+            body: JSON.stringify({ statusEntrega: "Em rota", updatedAt: p.updatedAt }),
           })
         )
       );
@@ -537,7 +538,7 @@ export default function RotaPage() {
         fetch(`/api/pedidos/${item.data.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ordemRota: ordem }),
+          body: JSON.stringify({ ordemRota: ordem, updatedAt: item.data.updatedAt }),
         }).catch(() => {});
         ordem++;
       }

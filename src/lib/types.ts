@@ -121,6 +121,7 @@ export interface Pedido {
   ordemRota: number | null;
   observacoes: string;
   recorrenteId: number | null;
+  updatedAt?: string;
   cliente: Cliente;
   formaPagamento: FormaPagamento | null;
   itens: PedidoItem[];

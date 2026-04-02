@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,16 +53,11 @@ const emptyForm = {
   observacoes: "",
 };
 
+import { useColumnConfig, type ColumnDef } from "@/hooks/use-column-config";
+
 type ColKey = "nome" | "telefone" | "endereco" | "bairro" | "cidade" | "cep" | "pluscode" | "obs";
 
-interface ColDef {
-  key: ColKey;
-  label: string;
-  visible: boolean;
-  required?: boolean;
-}
-
-const COLUNAS_DEFAULT: ColDef[] = [
+const COLUNAS_DEFAULT: ColumnDef<ColKey>[] = [
   { key: "nome", label: "Nome", visible: true, required: true },
   { key: "telefone", label: "Telefone", visible: true },
   { key: "endereco", label: "Endereço", visible: false },
@@ -73,48 +68,6 @@ const COLUNAS_DEFAULT: ColDef[] = [
   { key: "obs", label: "Observações", visible: false },
 ];
 
-const STORAGE_KEY = "clientes-columns-v2";
-
-function loadColunas(): ColDef[] {
-  if (typeof window === "undefined") return COLUNAS_DEFAULT;
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed: { key: ColKey; visible: boolean }[] = JSON.parse(stored);
-      // Rebuild from stored order, merging with defaults for new columns
-      const storedKeys = parsed.map((c) => c.key);
-      const merged: ColDef[] = parsed
-        .map((s) => {
-          const def = COLUNAS_DEFAULT.find((d) => d.key === s.key);
-          if (!def) return null;
-          return { ...def, visible: def.required ? true : s.visible };
-        })
-        .filter((c): c is ColDef => c !== null);
-      // Append any new columns not yet stored
-      for (const def of COLUNAS_DEFAULT) {
-        if (!storedKeys.includes(def.key)) {
-          merged.push(def);
-        }
-      }
-      return merged;
-    }
-  } catch {
-    // ignore
-  }
-  return COLUNAS_DEFAULT;
-}
-
-function saveColunas(cols: ColDef[]) {
-  try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(cols.map((c) => ({ key: c.key, visible: c.visible })))
-    );
-  } catch {
-    // ignore
-  }
-}
-
 export default function ClientesPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,51 +76,14 @@ export default function ClientesPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [buscandoCep, setBuscandoCep] = useState(false);
-  const [colunasConfig, setColunasConfig] = useState<ColDef[]>(COLUNAS_DEFAULT);
-  const [colunasOpen, setColunasOpen] = useState(false);
-  const colunasRef = useRef<HTMLDivElement>(null);
+  const { columns: colunasConfig, visible: visibleCols, open: colunasOpen, setOpen: setColunasOpen, ref: colunasRef, toggle: toggleCol, move: moveCol } = useColumnConfig<ColKey>({
+    storageKey: "clientes-columns-v2",
+    defaults: COLUNAS_DEFAULT,
+  });
 
   // Inline cell editing state
   const [editingCell, setEditingCell] = useState<{ id: number; field: string } | null>(null);
   const [editingValue, setEditingValue] = useState("");
-
-  // Load column config from localStorage on mount
-  useEffect(() => {
-    setColunasConfig(loadColunas());
-  }, []);
-
-  // Close columns dropdown on click outside
-  useEffect(() => {
-    if (!colunasOpen) return;
-    function handleClickOutside(e: MouseEvent) {
-      if (colunasRef.current && !colunasRef.current.contains(e.target as Node)) {
-        setColunasOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [colunasOpen]);
-
-  function toggleCol(key: ColKey) {
-    setColunasConfig((prev) => {
-      const next = prev.map((c) =>
-        c.key === key && !c.required ? { ...c, visible: !c.visible } : c
-      );
-      saveColunas(next);
-      return next;
-    });
-  }
-
-  function moveCol(i: number, dir: -1 | 1) {
-    setColunasConfig((prev) => {
-      const next = [...prev];
-      const j = i + dir;
-      if (j < 0 || j >= next.length) return prev;
-      [next[i], next[j]] = [next[j], next[i]];
-      saveColunas(next);
-      return next;
-    });
-  }
 
   async function buscarCep(cep: string) {
     const cleaned = cep.replace(/\D/g, "");
@@ -289,7 +205,6 @@ export default function ClientesPage() {
   }
 
   function exportClientesCSV() {
-    const visibleCols = colunasConfig.filter((c) => c.visible);
 
     function getCellValue(cliente: Cliente, key: ColKey): string {
       switch (key) {
@@ -327,13 +242,11 @@ export default function ClientesPage() {
     URL.revokeObjectURL(url);
   }
 
-  const visibleCols = colunasConfig.filter((c) => c.visible);
-
-  function renderHeaderCell(col: ColDef) {
+  function renderHeaderCell(col: ColumnDef<ColKey>) {
     return <TableHead key={col.key}>{col.label}</TableHead>;
   }
 
-  function renderBodyCell(cliente: Cliente, col: ColDef) {
+  function renderBodyCell(cliente: Cliente, col: ColumnDef<ColKey>) {
     switch (col.key) {
       case "nome":
         return (

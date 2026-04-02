@@ -49,6 +49,44 @@ export class ApiError extends Error {
   }
 }
 
+const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Valida e retorna um parâmetro de data no formato YYYY-MM-DD, ou o fallback. */
+export function parseDateParam(value: string | null, fallback?: string): string {
+  if (!value) return fallback ?? new Date().toISOString().slice(0, 10);
+  if (!DATE_REGEX.test(value)) throw new ApiError("Formato de data inválido (YYYY-MM-DD)", 400);
+  return value;
+}
+
+/**
+ * Verifica optimistic locking: se o body contém `updatedAt`, compara com o registro no banco.
+ * Se divergem, lança ApiError 409 (conflito). Retorna o timestamp atual para ser salvo no update.
+ */
+export function checkOptimisticLock(
+  bodyUpdatedAt: string | undefined | null,
+  dbUpdatedAt: string | undefined | null
+): string {
+  const now = new Date().toISOString();
+  // "" = nunca editado (default do schema), tratar como sem lock
+  const dbHasLock = dbUpdatedAt && dbUpdatedAt !== "";
+  const clientSent = bodyUpdatedAt && bodyUpdatedAt !== "";
+  // Se o registro já tem lock ativo, exigir updatedAt do client
+  if (dbHasLock && !clientSent) {
+    throw new ApiError(
+      "Este registro foi alterado. Recarregue a página e tente novamente.",
+      409
+    );
+  }
+  // Se ambos existem, verificar conflito
+  if (clientSent && dbHasLock && bodyUpdatedAt !== dbUpdatedAt) {
+    throw new ApiError(
+      "Este registro foi alterado por outro usuário. Recarregue a página e tente novamente.",
+      409
+    );
+  }
+  return now;
+}
+
 /** Centralized error handler for API routes. */
 export function handleApiError(error: unknown): NextResponse {
   // Zod validation errors

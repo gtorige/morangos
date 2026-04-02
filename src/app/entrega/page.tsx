@@ -50,6 +50,7 @@ interface Pedido {
   situacaoPagamento: string;
   observacoes: string;
   ordemRota: number | null;
+  updatedAt?: string;
   cliente: Cliente;
   itens: PedidoItem[];
 }
@@ -186,7 +187,7 @@ export default function EntregaPage() {
       await fetch(`/api/pedidos/${pedido.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ statusEntrega: "Entregue" }),
+        body: JSON.stringify({ statusEntrega: "Entregue", updatedAt: pedido.updatedAt }),
       });
       // Update local list immediately for responsive UI
       setLista(prev => {
@@ -212,7 +213,7 @@ export default function EntregaPage() {
       await fetch(`/api/pedidos/${pedido.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ situacaoPagamento: "Pago", valorPago: pedido.total }),
+        body: JSON.stringify({ situacaoPagamento: "Pago", valorPago: pedido.total, updatedAt: pedido.updatedAt }),
       });
       await fetchPedidos();
     } catch (error) {

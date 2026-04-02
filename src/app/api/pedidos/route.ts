@@ -6,57 +6,11 @@ import { pedidoCreateSchema } from "@/lib/schemas";
 import { processOrderItems } from "@/lib/services/pedido-service";
 import { PEDIDO_INCLUDE, SITUACAO_PAGAMENTO, STATUS_ENTREGA } from "@/lib/constants";
 import { nowStr, todayStr } from "@/lib/formatting";
+import { parsePagination, paginatedResponse, UNPAGINATED_LIMIT } from "@/lib/pagination";
 
 export async function GET(request: NextRequest) {
   return withAuth(async () => {
     const { searchParams } = new URL(request.url);
-    const duplicarId = searchParams.get("duplicar");
-
-    // Handle duplication
-    if (duplicarId) {
-      const id = parseId(duplicarId);
-      const original = await prisma.pedido.findUnique({
-        where: { id },
-        include: { itens: true },
-      });
-
-      if (!original) {
-        return NextResponse.json(
-          { error: "Pedido não encontrado para duplicação" },
-          { status: 404 }
-        );
-      }
-
-      const dataPedido = nowStr();
-      const dataEntrega = todayStr();
-
-      const novoPedido = await prisma.pedido.create({
-        data: {
-          clienteId: original.clienteId,
-          dataPedido,
-          dataEntrega,
-          formaPagamentoId: original.formaPagamentoId,
-          total: original.total,
-          taxaEntrega: original.taxaEntrega ?? 0,
-          valorPago: 0,
-          situacaoPagamento: "Pendente",
-          statusEntrega: "Pendente",
-          ordemRota: original.ordemRota,
-          observacoes: original.observacoes,
-          itens: {
-            create: original.itens.map((item) => ({
-              produtoId: item.produtoId,
-              quantidade: item.quantidade,
-              precoUnitario: item.precoUnitario,
-              subtotal: item.subtotal,
-            })),
-          },
-        },
-        include: PEDIDO_INCLUDE,
-      });
-
-      return NextResponse.json(novoPedido, { status: 201 });
-    }
 
     // Build filters
     const where: Prisma.PedidoWhereInput = {};
@@ -118,12 +72,29 @@ export async function GET(request: NextRequest) {
 
     const limit = searchParams.get("limit");
     const orderBy = searchParams.get("orderBy");
+    const pagination = parsePagination(searchParams);
 
+    if (pagination) {
+      const [pedidos, total] = await Promise.all([
+        prisma.pedido.findMany({
+          where,
+          include: PEDIDO_INCLUDE,
+          orderBy: { dataPedido: orderBy === "asc" ? "asc" : "desc" },
+          skip: pagination.skip,
+          take: pagination.take,
+        }),
+        prisma.pedido.count({ where }),
+      ]);
+      return NextResponse.json(paginatedResponse(pedidos, total, pagination));
+    }
+
+    // Sem paginação (retrocompatível, com limite de segurança)
+    const take = limit ? Math.min(parseId(limit), UNPAGINATED_LIMIT) : UNPAGINATED_LIMIT;
     const pedidos = await prisma.pedido.findMany({
       where,
       include: PEDIDO_INCLUDE,
       orderBy: { dataPedido: orderBy === "asc" ? "asc" : "desc" },
-      ...(limit ? { take: parseId(limit) } : {}),
+      take,
     });
 
     return NextResponse.json(pedidos);
