@@ -288,30 +288,28 @@ export default function ProducaoPage() {
     setSaving(true);
     setSaveStatus("saving");
     try {
-      // Envia TODOS os rows (inclusive qty=0 para deletar colheita existente)
-      const promises = rows
+      // Envia TODOS os rows sequencialmente (SQLite não suporta transações paralelas)
+      const toSave = rows
         .map((r) => {
           const qty = parseFloat(r.quantidade);
           return { ...r, qty: isNaN(qty) ? 0 : qty };
         })
-        .filter((r) => r.qty > 0 || r.hadColheita)
-        .map((r) =>
-          fetch("/api/colheita", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              produtoId: r.representanteId,
-              quantidade: r.qty,
-              data: hoje,
-              observacao: r.observacao || null,
-            }),
-          })
-        );
+        .filter((r) => r.qty > 0 || r.hadColheita);
 
-      const results = await Promise.all(promises);
-      const allOk = results.every((r) => r.ok);
-      if (!allOk) {
-        throw new Error("Erro ao salvar algumas colheitas");
+      for (const r of toSave) {
+        const res = await fetch("/api/colheita", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            produtoId: r.representanteId,
+            quantidade: r.qty,
+            data: hoje,
+            observacao: r.observacao || null,
+          }),
+        });
+        if (!res.ok) {
+          throw new Error("Erro ao salvar colheita");
+        }
       }
 
       setSaveStatus("saved");
