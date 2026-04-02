@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono, DM_Sans } from "next/font/google";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -57,6 +57,12 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
 });
 
+const dmSans = DM_Sans({
+  variable: "--font-dm-sans",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
 const navItems = [
   { href: "/resumo", label: "Resumo", icon: BarChart3 },
   { href: "/pedidos/novo", label: "Novo Pedido", icon: Plus, highlight: true },
@@ -71,6 +77,14 @@ const navItems = [
   { href: "/separacao", label: "Separação", icon: ClipboardCheck },
   { href: "/rota", label: "Rota de Entrega", icon: MapPin },
   { href: "/entrega", label: "Modo Entrega", icon: Truck },
+];
+
+// Sidebar section grouping (only used when not in edit/reorder mode)
+const NAV_SECTIONS: { label: string; items: string[] }[] = [
+  { label: "Vendas", items: ["/resumo", "/pedidos/novo", "/pedidos", "/recorrentes"] },
+  { label: "Cadastros", items: ["/clientes", "/produtos", "/promocoes"] },
+  { label: "Operações", items: ["/producao", "/estoque", "/separacao", "/rota", "/entrega"] },
+  { label: "Financeiro", items: ["/contas"] },
 ];
 
 const adminItems = [
@@ -239,80 +253,122 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-4 py-5">
-        <span className="text-xl font-bold tracking-tight text-primary">Gestão</span>
+        <span className="text-xl font-bold tracking-tight text-primary font-heading">Morangos</span>
+        <span className="text-[10px] font-medium text-muted-foreground/40 uppercase tracking-wider mt-0.5">v{appVersion}</span>
       </div>
       <Separator />
-      <nav className="flex-1 flex flex-col gap-1 p-3">
-        {orderedItems.map((item, index) => {
-          const Icon = item.icon;
-          const isActive = pathname.startsWith(item.href);
-          const isDragging = dragIndex === index;
-          const isOver = dragOverIndex === index && dragIndex !== index;
-          const isHighlight = (item as { highlight?: boolean }).highlight;
-          return (
-            <div
-              key={item.href}
-              draggable={editMode}
-              onDragStart={(e) => handleDragStart(e, index)}
-              onDragOver={(e) => handleDragOver(e, index)}
-              onDragEnter={(e) => handleDragEnter(e, index)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, index)}
-              onDragEnd={handleDragEnd}
-              className={`relative ${isDragging ? "opacity-50" : ""}`}
-            >
-              {isOver && (
-                <div className="absolute -top-[1.5px] left-2 right-2 h-[3px] rounded-full bg-primary z-10" />
-              )}
-              <Link
-                href={item.href}
-                onClick={(e) => {
-                  if (editMode) {
-                    e.preventDefault();
-                    return;
-                  }
-                  onNavigate?.();
-                }}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : isHighlight
-                    ? "bg-primary/15 text-primary hover:bg-primary/25"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                } ${editMode ? "border border-border/50 cursor-grab active:cursor-grabbing" : ""}`}
+      <nav className="flex-1 flex flex-col gap-0.5 p-3 overflow-y-auto">
+        {editMode ? (
+          // Edit mode: flat draggable list
+          orderedItems.map((item, index) => {
+            const Icon = item.icon;
+            const isActive = pathname.startsWith(item.href);
+            const isDragging = dragIndex === index;
+            const isOver = dragOverIndex === index && dragIndex !== index;
+            return (
+              <div
+                key={item.href}
+                draggable
+                onDragStart={(e) => handleDragStart(e, index)}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDragEnter={(e) => handleDragEnter(e, index)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, index)}
+                onDragEnd={handleDragEnd}
+                className={`relative ${isDragging ? "opacity-50" : ""}`}
               >
-                {editMode && (
-                  <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                {isOver && (
+                  <div className="absolute -top-[1.5px] left-2 right-2 h-[3px] rounded-full bg-primary z-10" />
                 )}
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            </div>
-          );
-        })}
-
-        {isAdmin && (
-          <>
-            <Separator className="my-2" />
-            {adminItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname.startsWith(item.href);
-              return (
                 <Link
-                  key={item.href}
                   href={item.href}
-                  onClick={onNavigate}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  onClick={(e) => { e.preventDefault(); }}
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors border border-border/50 cursor-grab active:cursor-grabbing ${
+                    isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   }`}
                 >
+                  <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50" />
                   <Icon className="h-4 w-4" />
                   {item.label}
                 </Link>
+              </div>
+            );
+          })
+        ) : (
+          // Normal mode: grouped sections
+          <>
+            {NAV_SECTIONS.map((section, sIdx) => {
+              const sectionItems = section.items
+                .map((href) => orderedItems.find((i) => i.href === href))
+                .filter(Boolean) as typeof orderedItems;
+              if (sectionItems.length === 0) return null;
+              return (
+                <div key={section.label} className={sIdx > 0 ? "mt-3" : ""}>
+                  <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
+                    {section.label}
+                  </p>
+                  {sectionItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = pathname.startsWith(item.href);
+                    const isHighlight = (item as { highlight?: boolean }).highlight;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={onNavigate}
+                        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                          isActive
+                            ? "bg-primary text-primary-foreground"
+                            : isHighlight
+                            ? "bg-primary/15 text-primary hover:bg-primary/25"
+                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
               );
             })}
+            {/* Items from reorder that aren't in any section */}
+            {(() => {
+              const allSectionHrefs = new Set(NAV_SECTIONS.flatMap((s) => s.items));
+              const orphans = orderedItems.filter((i) => !allSectionHrefs.has(i.href));
+              if (orphans.length === 0) return null;
+              return orphans.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname.startsWith(item.href);
+                return (
+                  <Link key={item.href} href={item.href} onClick={onNavigate}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                      isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    }`}>
+                    <Icon className="h-4 w-4" />{item.label}
+                  </Link>
+                );
+              });
+            })()}
+            {isAdmin && (
+              <div className="mt-3">
+                <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
+                  Admin
+                </p>
+                {adminItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = pathname.startsWith(item.href);
+                  return (
+                    <Link key={item.href} href={item.href} onClick={onNavigate}
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                        isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                      }`}>
+                      <Icon className="h-4 w-4" />{item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
       </nav>
@@ -401,7 +457,6 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           </div>
         </>
       )}
-      <p className="px-4 py-2 text-[10px] text-muted-foreground/40">v{appVersion}</p>
     </div>
   );
 }
@@ -477,11 +532,11 @@ function NotificationBanners() {
     return (
       <button
         onClick={toggle}
-        className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-1.5 mb-4 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-1.5 mb-4 text-xs text-amber-400/80 hover:text-amber-300 transition-colors"
       >
         <Bell className="size-3.5" />
-        <span className="bg-red-600 text-white text-xs px-1.5 py-0.5 rounded-full">{items.length}</span>
-        <span>Notificações</span>
+        <span className="bg-red-500/20 text-red-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{items.length}</span>
+        <span>{items.length} {items.length === 1 ? "alerta" : "alertas"}</span>
       </button>
     );
   }
@@ -549,7 +604,7 @@ function AppShell({ children }: { children: ReactNode }) {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+    <html lang="pt-BR" className={`${inter.variable} ${jetbrainsMono.variable} ${dmSans.variable}`}>
       <head>
         <title>Gestão de Morangos</title>
         <meta

@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("animate-pulse rounded-md bg-muted", className)}
+      className={cn("rounded-md bg-muted animate-shimmer", className)}
       {...props}
     />
   );
@@ -37,8 +37,8 @@ function CardSkeleton({ count = 3 }: { count?: number }) {
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} className="rounded-xl ring-1 ring-foreground/10 p-4 space-y-3">
-          <Skeleton className="h-4 w-1/3" />
-          <Skeleton className="h-8 w-1/2" />
+          <Skeleton className="h-3 w-1/4" />
+          <Skeleton className="h-7 w-1/2" />
           <Skeleton className="h-3 w-2/3" />
         </div>
       ))}
