@@ -244,7 +244,9 @@ export function useContas() {
 
   const bulkDelete = useCallback(async (ids: number[]) => {
     if (!confirm(`Deseja excluir ${ids.length} conta(s)?`)) return;
-    await Promise.all(ids.map((id) => fetch(`/api/contas/${id}`, { method: "DELETE" })));
+    for (const id of ids) {
+      await fetch(`/api/contas/${id}`, { method: "DELETE" });
+    }
     fetchContas();
   }, [fetchContas]);
 
