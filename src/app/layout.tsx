@@ -79,8 +79,9 @@ const navItems = [
   { href: "/entrega", label: "Modo Entrega", icon: Truck },
 ];
 
-// Sidebar section grouping (only used when not in edit/reorder mode)
-const NAV_SECTIONS: { label: string; items: string[] }[] = [
+interface NavSection { label: string; items: string[] }
+
+const DEFAULT_SECTIONS: NavSection[] = [
   { label: "Vendas", items: ["/resumo", "/pedidos/novo", "/pedidos", "/recorrentes"] },
   { label: "Cadastros", items: ["/clientes", "/produtos", "/promocoes"] },
   { label: "Operações", items: ["/producao", "/estoque", "/separacao", "/rota", "/entrega"] },
@@ -92,39 +93,43 @@ const adminItems = [
   { href: "/admin/configuracoes", label: "Configurações", icon: Settings },
 ];
 
-const MENU_ORDER_KEY = "menu-order";
+const MENU_ORDER_KEY = "menu-sections";
 
-function getOrderedNavItems(): typeof navItems {
-  if (typeof window === "undefined") return navItems;
+const navItemMap = new Map(navItems.map((item) => [item.href, item]));
+
+function getSavedSections(): NavSection[] {
+  if (typeof window === "undefined") return DEFAULT_SECTIONS;
   try {
     const saved = localStorage.getItem(MENU_ORDER_KEY);
-    if (!saved) return navItems;
-    const savedOrder: string[] = JSON.parse(saved);
-    const currentPaths = new Set(navItems.map((item) => item.href));
-    // Filter out removed items
-    const validOrder = savedOrder.filter((path) => currentPaths.has(path));
-    // Find new items not in saved order
-    const savedSet = new Set(validOrder);
-    const newItems = navItems.filter((item) => !savedSet.has(item.href));
-    // Build ordered list
-    const ordered = validOrder.map(
-      (path) => navItems.find((item) => item.href === path)!
-    );
-    return [...ordered, ...newItems];
+    if (!saved) return DEFAULT_SECTIONS;
+    const parsed: NavSection[] = JSON.parse(saved);
+    // Validate: ensure all current navItems are present
+    const allHrefs = new Set(navItems.map((i) => i.href));
+    const savedHrefs = new Set(parsed.flatMap((s) => s.items));
+    // Remove stale hrefs
+    const cleaned = parsed.map((s) => ({
+      ...s,
+      items: s.items.filter((h) => allHrefs.has(h)),
+    })).filter((s) => s.items.length > 0);
+    // Add any new items not in saved
+    const missing = navItems.filter((i) => !savedHrefs.has(i.href));
+    if (missing.length > 0) {
+      if (cleaned.length > 0) {
+        cleaned[0].items.push(...missing.map((i) => i.href));
+      } else {
+        return DEFAULT_SECTIONS;
+      }
+    }
+    return cleaned;
   } catch {
-    return navItems;
+    return DEFAULT_SECTIONS;
   }
 }
 
-function saveMenuOrder(items: typeof navItems) {
+function saveSections(sections: NavSection[]) {
   try {
-    localStorage.setItem(
-      MENU_ORDER_KEY,
-      JSON.stringify(items.map((item) => item.href))
-    );
-  } catch {
-    // ignore
-  }
+    localStorage.setItem(MENU_ORDER_KEY, JSON.stringify(sections));
+  } catch {}
 }
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
@@ -139,86 +144,85 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const [pwSuccess, setPwSuccess] = useState(false);
   const [pwSaving, setPwSaving] = useState(false);
 
-  // Menu reorder state
-  const [orderedItems, setOrderedItems] = useState(navItems);
+  // Menu reorder state — sections with items
+  const [sections, setSections] = useState<NavSection[]>(DEFAULT_SECTIONS);
   const [editMode, setEditMode] = useState(false);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const dragCounter = useRef(0);
+  // Drag state: "item:sectionIdx:itemIdx" or "section:sectionIdx"
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   useEffect(() => {
-    setOrderedItems(getOrderedNavItems());
+    setSections(getSavedSections());
   }, []);
 
-  const handleDragStart = useCallback(
-    (e: React.DragEvent, index: number) => {
-      if (!editMode) return;
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", String(index));
-      setDragIndex(index);
-    },
-    [editMode]
-  );
+  function updateSections(next: NavSection[]) {
+    setSections(next);
+    saveSections(next);
+  }
 
-  const handleDragOver = useCallback(
-    (e: React.DragEvent, index: number) => {
-      if (!editMode) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-      setDragOverIndex(index);
-    },
-    [editMode]
-  );
+  // Item drag within and across sections
+  function onItemDragStart(e: React.DragEvent, sIdx: number, iIdx: number) {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", `item:${sIdx}:${iIdx}`);
+    setDragId(`item:${sIdx}:${iIdx}`);
+  }
 
-  const handleDragEnter = useCallback(
-    (e: React.DragEvent, index: number) => {
-      if (!editMode) return;
-      e.preventDefault();
-      dragCounter.current++;
-      setDragOverIndex(index);
-    },
-    [editMode]
-  );
+  function onItemDragOver(e: React.DragEvent, sIdx: number, iIdx: number) {
+    if (!dragId?.startsWith("item:")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDropTarget(`item:${sIdx}:${iIdx}`);
+  }
 
-  const handleDragLeave = useCallback(
-    (e: React.DragEvent) => {
-      if (!editMode) return;
-      e.preventDefault();
-      dragCounter.current--;
-      if (dragCounter.current === 0) {
-        setDragOverIndex(null);
-      }
-    },
-    [editMode]
-  );
+  function onItemDrop(e: React.DragEvent, toSIdx: number, toIIdx: number) {
+    e.preventDefault();
+    if (!dragId?.startsWith("item:")) { clearDrag(); return; }
+    const [, fromSStr, fromIStr] = dragId.split(":");
+    const fromS = Number(fromSStr), fromI = Number(fromIStr);
+    if (fromS === toSIdx && fromI === toIIdx) { clearDrag(); return; }
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent, dropIndex: number) => {
-      if (!editMode) return;
-      e.preventDefault();
-      dragCounter.current = 0;
-      const fromIndex = dragIndex;
-      if (fromIndex === null || fromIndex === dropIndex) {
-        setDragIndex(null);
-        setDragOverIndex(null);
-        return;
-      }
-      const newItems = [...orderedItems];
-      const [moved] = newItems.splice(fromIndex, 1);
-      newItems.splice(dropIndex, 0, moved);
-      setOrderedItems(newItems);
-      saveMenuOrder(newItems);
-      setDragIndex(null);
-      setDragOverIndex(null);
-    },
-    [editMode, dragIndex, orderedItems]
-  );
+    const next = sections.map((s) => ({ ...s, items: [...s.items] }));
+    const [moved] = next[fromS].items.splice(fromI, 1);
+    // Adjust target index if same section and source was before target
+    const adjustedIdx = fromS === toSIdx && fromI < toIIdx ? toIIdx - 1 : toIIdx;
+    next[toSIdx].items.splice(adjustedIdx, 0, moved);
+    // Remove empty sections
+    const cleaned = next.filter((s) => s.items.length > 0);
+    updateSections(cleaned);
+    clearDrag();
+  }
 
-  const handleDragEnd = useCallback(() => {
-    dragCounter.current = 0;
-    setDragIndex(null);
-    setDragOverIndex(null);
-  }, []);
+  // Section drag
+  function onSectionDragStart(e: React.DragEvent, sIdx: number) {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", `section:${sIdx}`);
+    setDragId(`section:${sIdx}`);
+  }
+
+  function onSectionDragOver(e: React.DragEvent, sIdx: number) {
+    if (!dragId?.startsWith("section:")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDropTarget(`section:${sIdx}`);
+  }
+
+  function onSectionDrop(e: React.DragEvent, toSIdx: number) {
+    e.preventDefault();
+    if (!dragId?.startsWith("section:")) { clearDrag(); return; }
+    const fromS = Number(dragId.split(":")[1]);
+    if (fromS === toSIdx) { clearDrag(); return; }
+
+    const next = [...sections];
+    const [moved] = next.splice(fromS, 1);
+    next.splice(toSIdx, 0, moved);
+    updateSections(next);
+    clearDrag();
+  }
+
+  function clearDrag() {
+    setDragId(null);
+    setDropTarget(null);
+  }
 
   async function handleChangePassword() {
     setPwError("");
@@ -258,118 +262,99 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       </div>
       <Separator />
       <nav className="flex-1 flex flex-col gap-0.5 p-3 overflow-y-auto">
-        {editMode ? (
-          // Edit mode: flat draggable list
-          orderedItems.map((item, index) => {
-            const Icon = item.icon;
-            const isActive = pathname.startsWith(item.href);
-            const isDragging = dragIndex === index;
-            const isOver = dragOverIndex === index && dragIndex !== index;
-            return (
-              <div
-                key={item.href}
-                draggable
-                onDragStart={(e) => handleDragStart(e, index)}
-                onDragOver={(e) => handleDragOver(e, index)}
-                onDragEnter={(e) => handleDragEnter(e, index)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, index)}
-                onDragEnd={handleDragEnd}
-                className={`relative ${isDragging ? "opacity-50" : ""}`}
-              >
-                {isOver && (
-                  <div className="absolute -top-[1.5px] left-2 right-2 h-[3px] rounded-full bg-primary z-10" />
+        {sections.map((section, sIdx) => {
+          const sectionItems = section.items
+            .map((href) => navItemMap.get(href))
+            .filter(Boolean) as typeof navItems;
+          if (sectionItems.length === 0) return null;
+
+          const isSectionDragging = dragId === `section:${sIdx}`;
+          const isSectionDropTarget = dropTarget === `section:${sIdx}` && dragId?.startsWith("section:") && dragId !== `section:${sIdx}`;
+
+          return (
+            <div
+              key={section.label}
+              className={`${sIdx > 0 ? "mt-3" : ""} ${isSectionDragging ? "opacity-50" : ""} relative`}
+              draggable={editMode}
+              onDragStart={(e) => { if (editMode && (e.target as HTMLElement).closest("[data-section-handle]")) { onSectionDragStart(e, sIdx); } else if (editMode && !(e.target as HTMLElement).closest("[data-item-drag]")) { e.preventDefault(); } }}
+              onDragOver={(e) => { if (dragId?.startsWith("section:")) onSectionDragOver(e, sIdx); }}
+              onDrop={(e) => { if (dragId?.startsWith("section:")) onSectionDrop(e, sIdx); }}
+              onDragEnd={clearDrag}
+            >
+              {isSectionDropTarget && (
+                <div className="absolute -top-1.5 left-2 right-2 h-[3px] rounded-full bg-primary z-10" />
+              )}
+              <div className={`flex items-center gap-1.5 px-3 pb-1.5 ${editMode ? "cursor-default" : ""}`}>
+                {editMode && (
+                  <div data-section-handle className="cursor-grab active:cursor-grabbing">
+                    <GripVertical className="h-3 w-3 text-muted-foreground/30" />
+                  </div>
                 )}
-                <Link
-                  href={item.href}
-                  onClick={(e) => { e.preventDefault(); }}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors border border-border/50 cursor-grab active:cursor-grabbing ${
-                    isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                  }`}
-                >
-                  <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50" />
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
+                  {section.label}
+                </p>
               </div>
-            );
-          })
-        ) : (
-          // Normal mode: grouped sections
-          <>
-            {NAV_SECTIONS.map((section, sIdx) => {
-              const sectionItems = section.items
-                .map((href) => orderedItems.find((i) => i.href === href))
-                .filter(Boolean) as typeof orderedItems;
-              if (sectionItems.length === 0) return null;
-              return (
-                <div key={section.label} className={sIdx > 0 ? "mt-3" : ""}>
-                  <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
-                    {section.label}
-                  </p>
-                  {sectionItems.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = pathname.startsWith(item.href);
-                    const isHighlight = (item as { highlight?: boolean }).highlight;
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={onNavigate}
-                        className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                          isActive
-                            ? "bg-primary text-primary-foreground"
-                            : isHighlight
-                            ? "bg-primary/15 text-primary hover:bg-primary/25"
-                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                        }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {item.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-              );
-            })}
-            {/* Items from reorder that aren't in any section */}
-            {(() => {
-              const allSectionHrefs = new Set(NAV_SECTIONS.flatMap((s) => s.items));
-              const orphans = orderedItems.filter((i) => !allSectionHrefs.has(i.href));
-              if (orphans.length === 0) return null;
-              return orphans.map((item) => {
+              {sectionItems.map((item, iIdx) => {
                 const Icon = item.icon;
                 const isActive = pathname.startsWith(item.href);
+                const isHighlight = (item as { highlight?: boolean }).highlight;
+                const itemDragId = `item:${sIdx}:${iIdx}`;
+                const isItemDragging = dragId === itemDragId;
+                const isItemDropTarget = dropTarget === itemDragId && dragId?.startsWith("item:") && dragId !== itemDragId;
+
                 return (
-                  <Link key={item.href} href={item.href} onClick={onNavigate}
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                      isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                    }`}>
-                    <Icon className="h-4 w-4" />{item.label}
-                  </Link>
-                );
-              });
-            })()}
-            {isAdmin && (
-              <div className="mt-3">
-                <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
-                  Admin
-                </p>
-                {adminItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = pathname.startsWith(item.href);
-                  return (
-                    <Link key={item.href} href={item.href} onClick={onNavigate}
+                  <div
+                    key={item.href}
+                    data-item-drag
+                    draggable={editMode}
+                    onDragStart={(e) => { e.stopPropagation(); onItemDragStart(e, sIdx, iIdx); }}
+                    onDragOver={(e) => onItemDragOver(e, sIdx, iIdx)}
+                    onDrop={(e) => { e.stopPropagation(); onItemDrop(e, sIdx, iIdx); }}
+                    onDragEnd={clearDrag}
+                    className={`relative ${isItemDragging ? "opacity-50" : ""}`}
+                  >
+                    {isItemDropTarget && (
+                      <div className="absolute -top-[1.5px] left-2 right-2 h-[3px] rounded-full bg-primary z-10" />
+                    )}
+                    <Link
+                      href={item.href}
+                      onClick={(e) => { if (editMode) { e.preventDefault(); return; } onNavigate?.(); }}
                       className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                        isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                      }`}>
-                      <Icon className="h-4 w-4" />{item.label}
+                        isActive
+                          ? "bg-primary text-primary-foreground"
+                          : isHighlight
+                          ? "bg-primary/15 text-primary hover:bg-primary/25"
+                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                      } ${editMode ? "border border-border/50 cursor-grab active:cursor-grabbing" : ""}`}
+                    >
+                      {editMode && <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50" />}
+                      <Icon className="h-4 w-4" />
+                      {item.label}
                     </Link>
-                  );
-                })}
-              </div>
-            )}
-          </>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+        {isAdmin && (
+          <div className="mt-3">
+            <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
+              Admin
+            </p>
+            {adminItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = pathname.startsWith(item.href);
+              return (
+                <Link key={item.href} href={item.href} onClick={onNavigate}
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                    isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  }`}>
+                  <Icon className="h-4 w-4" />{item.label}
+                </Link>
+              );
+            })}
+          </div>
         )}
       </nav>
 
