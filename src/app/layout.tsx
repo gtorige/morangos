@@ -275,20 +275,25 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             <div
               key={section.label}
               className={`${sIdx > 0 ? "mt-3" : ""} ${isSectionDragging ? "opacity-50" : ""} relative`}
-              draggable={editMode}
-              onDragStart={(e) => { if (editMode && (e.target as HTMLElement).closest("[data-section-handle]")) { onSectionDragStart(e, sIdx); } else if (editMode && !(e.target as HTMLElement).closest("[data-item-drag]")) { e.preventDefault(); } }}
-              onDragOver={(e) => { if (dragId?.startsWith("section:")) onSectionDragOver(e, sIdx); }}
-              onDrop={(e) => { if (dragId?.startsWith("section:")) onSectionDrop(e, sIdx); }}
+              onDragOver={(e) => {
+                // Allow both section and item drops inside section containers
+                if (dragId) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }
+                if (dragId?.startsWith("section:")) setDropTarget(`section:${sIdx}`);
+              }}
+              onDrop={(e) => { if (dragId?.startsWith("section:")) { e.preventDefault(); onSectionDrop(e, sIdx); } }}
               onDragEnd={clearDrag}
             >
               {isSectionDropTarget && (
                 <div className="absolute -top-1.5 left-2 right-2 h-[3px] rounded-full bg-primary z-10" />
               )}
-              <div className={`flex items-center gap-1.5 px-3 pb-1.5 ${editMode ? "cursor-default" : ""}`}>
+              {/* Section header — draggable for section reorder */}
+              <div
+                draggable={editMode}
+                onDragStart={(e) => { if (editMode) { e.stopPropagation(); onSectionDragStart(e, sIdx); } }}
+                className={`flex items-center gap-1.5 px-3 pb-1.5 ${editMode ? "cursor-grab active:cursor-grabbing" : ""}`}
+              >
                 {editMode && (
-                  <div data-section-handle className="cursor-grab active:cursor-grabbing">
-                    <GripVertical className="h-3 w-3 text-muted-foreground/30" />
-                  </div>
+                  <GripVertical className="h-3 w-3 text-muted-foreground/30 shrink-0" />
                 )}
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40">
                   {section.label}
@@ -305,11 +310,23 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                 return (
                   <div
                     key={item.href}
-                    data-item-drag
                     draggable={editMode}
-                    onDragStart={(e) => { e.stopPropagation(); onItemDragStart(e, sIdx, iIdx); }}
-                    onDragOver={(e) => onItemDragOver(e, sIdx, iIdx)}
-                    onDrop={(e) => { e.stopPropagation(); onItemDrop(e, sIdx, iIdx); }}
+                    onDragStart={(e) => { if (editMode) { e.stopPropagation(); onItemDragStart(e, sIdx, iIdx); } }}
+                    onDragOver={(e) => {
+                      if (dragId?.startsWith("item:")) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.dataTransfer.dropEffect = "move";
+                        setDropTarget(itemDragId);
+                      }
+                    }}
+                    onDrop={(e) => {
+                      if (dragId?.startsWith("item:")) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onItemDrop(e, sIdx, iIdx);
+                      }
+                    }}
                     onDragEnd={clearDrag}
                     className={`relative ${isItemDragging ? "opacity-50" : ""}`}
                   >
