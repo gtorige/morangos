@@ -114,6 +114,8 @@ export async function processOrderItems(
     if (!produtoIdSet.has(promocao.produtoId)) continue;
     const targetItem = itensProcessados.find((i) => i.produtoId === promocao.produtoId2);
     if (!targetItem) continue;
+    // Only apply if no better promotion was already set (lower price wins)
+    if (targetItem.precoUnitario <= promocao.precoPromocional) continue;
     targetItem.precoUnitario = promocao.precoPromocional;
     targetItem.subtotal = promocao.precoPromocional * targetItem.quantidade;
   }

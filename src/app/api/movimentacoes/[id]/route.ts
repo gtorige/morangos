@@ -78,10 +78,11 @@ export async function DELETE(
       await tx.movimentacaoEstoque.delete({ where: { id: idNum } });
 
       // Reverter estoqueAtual (só para tipo "estoque")
+      // Negate the movement: positive movements (entries) subtract, negative (exits) add back
       if (mov.produto.tipoEstoque === "estoque") {
         await tx.produto.update({
           where: { id: mov.produtoId },
-          data: { estoqueAtual: { decrement: mov.quantidade } },
+          data: { estoqueAtual: { increment: -mov.quantidade } },
         });
       }
     });

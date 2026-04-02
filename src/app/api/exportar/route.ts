@@ -8,6 +8,9 @@ export async function GET(request: NextRequest) {
     if (!session?.user) {
       return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
     }
+    if (!(session.user as { isAdmin?: boolean })?.isAdmin) {
+      return NextResponse.json({ error: "Acesso restrito a administradores." }, { status: 403 });
+    }
 
     const { searchParams } = new URL(request.url);
     const tipo = searchParams.get("tipo") || "pedidos";

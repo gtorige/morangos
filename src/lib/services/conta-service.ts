@@ -72,16 +72,21 @@ export async function criarContaComParcelas(input: CriarContaInput) {
       data: { parcelaGrupoId: grupoId },
     });
 
-    // Criar parcelas restantes
+    // Criar parcelas restantes (última parcela absorve diferença de arredondamento)
     const parcelas = [first];
     for (let i = 1; i < totalParcelas; i++) {
       const venc = new Date(baseDate);
       venc.setMonth(venc.getMonth() + i);
 
+      const isLast = i === totalParcelas - 1;
+      const valor = isLast
+        ? parseFloat((valorTotal - valorParcela * (totalParcelas - 1)).toFixed(2))
+        : valorParcela;
+
       const parcela = await tx.conta.create({
         data: {
           ...baseData,
-          valor: valorParcela,
+          valor,
           vencimento: venc.toISOString().slice(0, 10),
           parcelaNumero: i + 1,
           parcelaGrupoId: grupoId,

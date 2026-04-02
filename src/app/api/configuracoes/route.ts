@@ -4,15 +4,21 @@ import { withAuth, parseBody } from "@/lib/api-helpers";
 import { configuracaoSchema } from "@/lib/schemas";
 
 export async function GET(request: NextRequest) {
-  return withAuth(async () => {
+  return withAuth(async (session) => {
     const { searchParams } = new URL(request.url);
     const chave = searchParams.get("chave");
 
+    // Individual key lookups allowed for all users (used by route optimization)
     if (chave) {
       const config = await prisma.configuracao.findUnique({
         where: { chave },
       });
       return NextResponse.json(config);
+    }
+
+    // Listing all configs (includes API keys) requires admin
+    if (!session.user.isAdmin) {
+      return NextResponse.json({ error: "Acesso restrito a administradores." }, { status: 403 });
     }
 
     const configs = await prisma.configuracao.findMany();

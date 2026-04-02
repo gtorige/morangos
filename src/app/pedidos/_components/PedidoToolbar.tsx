@@ -326,7 +326,7 @@ export function PedidoToolbar({
                 className="bg-blue-600 hover:bg-blue-700 text-white h-7 text-xs"
                 onClick={() => {
                   if (bulkDate) {
-                    onBulkAction("pendente_entrega", bulkDate);
+                    onBulkAction("alterar_data", bulkDate);
                     setBulkDatePickerOpen(false);
                     setBulkDate("");
                   }
