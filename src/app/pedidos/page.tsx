@@ -327,14 +327,7 @@ function PedidosPageInner() {
         filtered = filtered.filter((p: Pedido) => p.cliente?.cidade && f.cidades.includes(p.cliente.cidade));
       }
       if (f.statusPedido?.length > 0) {
-        filtered = filtered.filter((p: Pedido) => {
-          const isPago = p.situacaoPagamento === "Pago";
-          const isEntregue = p.statusEntrega === "Entregue";
-          const isConcluido = isPago && isEntregue;
-          if (f.statusPedido.includes("concluido") && isConcluido) return true;
-          if (f.statusPedido.includes("pendente") && !isConcluido) return true;
-          return false;
-        });
+        filtered = filtered.filter((p: Pedido) => f.statusPedido.includes(p.statusEntrega));
       }
       if (f.recorrente === "sim") {
         filtered = filtered.filter((p: Pedido) => p.recorrenteId != null);

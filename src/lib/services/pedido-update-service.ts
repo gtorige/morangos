@@ -69,17 +69,17 @@ export async function reverterEstoquePedido(tx: Tx, idNum: number) {
     include: { produto: true },
   });
 
-  // Aggregate decrements per product (mov.quantidade is negative, so decrement adds back)
+  // Aggregate stock to restore per product (mov.quantidade is negative for debits)
   const restores = new Map<number, number>();
   for (const mov of movs) {
     if (mov.produto.tipoEstoque === "estoque") {
-      restores.set(mov.produtoId, (restores.get(mov.produtoId) || 0) + mov.quantidade);
+      restores.set(mov.produtoId, (restores.get(mov.produtoId) || 0) + Math.abs(mov.quantidade));
     }
   }
 
   await Promise.all([
     ...Array.from(restores.entries()).map(([produtoId, qty]) =>
-      tx.produto.update({ where: { id: produtoId }, data: { estoqueAtual: { decrement: qty } } })
+      tx.produto.update({ where: { id: produtoId }, data: { estoqueAtual: { increment: qty } } })
     ),
     tx.movimentacaoEstoque.deleteMany({
       where: { referencia: String(idNum), tipo: "pedido" },

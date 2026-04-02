@@ -121,6 +121,7 @@ export const pedidoBulkSchema = z.object({
     "cancelado",
     "pendente_entrega",
     "pendente_pagamento",
+    "alterar_data",
   ]),
   dataEntrega: dateStr().optional(),
 });

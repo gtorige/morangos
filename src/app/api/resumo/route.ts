@@ -38,7 +38,8 @@ export async function GET(request: NextRequest) {
       dataFimAnterior = prev.dataFim;
     }
 
-    // Current period orders
+    // Current period orders (capped to prevent memory issues on large date ranges)
+    const RESUMO_LIMIT = 5000;
     const pedidos = await prisma.pedido.findMany({
       where: {
         dataEntrega: { gte: dataInicio, lte: dataFim },
@@ -48,6 +49,7 @@ export async function GET(request: NextRequest) {
         formaPagamento: true,
         itens: { include: { produto: true } },
       },
+      take: RESUMO_LIMIT,
     });
 
     // Previous period orders
@@ -59,6 +61,7 @@ export async function GET(request: NextRequest) {
         cliente: true,
         itens: { include: { produto: true } },
       },
+      take: RESUMO_LIMIT,
     });
 
     // --- Filter: only delivered orders count as revenue ---

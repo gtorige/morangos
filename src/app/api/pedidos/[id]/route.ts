@@ -45,10 +45,27 @@ export async function PUT(
     const { itens, updatedAt: bodyUpdatedAt, ...pedidoData } = body;
 
     // Path 1: Items update — replace items and recalculate total
+    // If order was already delivered, revert stock first and re-apply after
     if (itens) {
-      const pedido = await prisma.$transaction((tx) =>
-        updatePedidoItens(tx, idNum, itens, pedidoData, bodyUpdatedAt)
-      );
+      const pedido = await prisma.$transaction(async (tx) => {
+        const current = await tx.pedido.findUnique({
+          where: { id: idNum },
+          select: { statusEntrega: true },
+        });
+        const wasEntregue = current?.statusEntrega === "Entregue";
+
+        if (wasEntregue) {
+          await reverterEstoquePedido(tx, idNum);
+        }
+
+        const updated = await updatePedidoItens(tx, idNum, itens, pedidoData, bodyUpdatedAt);
+
+        if (wasEntregue) {
+          await marcarPedidoEntregue(tx, idNum, { statusEntrega: "Entregue" }, updated.updatedAt);
+        }
+
+        return updated;
+      });
       return NextResponse.json(pedido);
     }
 

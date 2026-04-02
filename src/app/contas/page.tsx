@@ -158,7 +158,7 @@ function ContasPage() {
         if (c.situacao !== "Pendente") return false;
         try {
           const v = parseISO(c.vencimento);
-          if (isPast(v) || isToday(v)) return false;
+          if (isPast(v) && !isToday(v)) return false;
         } catch {}
       }
       if (filterSituacao === "Vencida") {

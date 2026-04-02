@@ -73,6 +73,7 @@ export async function calcularEstoqueDia(data: string): Promise<EstoqueDiaItem[]
       where: { dataEntrega: data, statusEntrega: { in: ["Entregue", "Pendente", "Em rota"] } },
       include: { itens: true },
     }),
+    // Note: "Cancelado" is intentionally excluded above
     prisma.movimentacaoEstoque.findMany({
       where: { data, tipo: { in: ["congelamento", "descarte", "consumo"] } },
     }),
@@ -80,9 +81,9 @@ export async function calcularEstoqueDia(data: string): Promise<EstoqueDiaItem[]
 
   const colheitaMap = aggregateByProduto(colheitas, (c) => c.quantidade);
 
-  // Separar entregues e pendentes em memória
+  // Separar entregues e pendentes em memória (Cancelado already excluded by query)
   const pedidosEntregues = pedidosTodos.filter((p) => p.statusEntrega === "Entregue");
-  const pedidosPendentes = pedidosTodos.filter((p) => p.statusEntrega !== "Entregue");
+  const pedidosPendentes = pedidosTodos.filter((p) => p.statusEntrega === "Pendente" || p.statusEntrega === "Em rota");
   const vendidoMap = aggregateItensToKg(pedidosEntregues, produtoMap);
   const reservadoMap = aggregateItensToKg(pedidosPendentes, produtoMap);
   const saidaManualMap = new Map<number, number>();

@@ -58,32 +58,35 @@ export async function DELETE(
     const { id } = await params;
     const idNum = parseId(id);
 
-    // Se a conta é âncora de um grupo de parcelas, excluir todo o grupo
-    const conta = await prisma.conta.findUnique({
-      where: { id: idNum },
-      select: { parcelaGrupoId: true },
-    });
+    // Wrap in transaction to prevent race conditions on group delete
+    await prisma.$transaction(async (tx) => {
+      const conta = await tx.conta.findUnique({
+        where: { id: idNum },
+        select: { parcelaGrupoId: true },
+      });
 
-    if (conta?.parcelaGrupoId) {
-      // Conta pertence a um grupo — excluir todas as parcelas do grupo
-      await prisma.conta.deleteMany({
-        where: { parcelaGrupoId: conta.parcelaGrupoId },
-      });
-    } else {
-      // Verificar se outras contas apontam para esta como grupo
-      const dependents = await prisma.conta.count({
-        where: { parcelaGrupoId: idNum, id: { not: idNum } },
-      });
-      if (dependents > 0) {
-        // Esta conta é âncora — excluir todo o grupo
-        await prisma.conta.deleteMany({
-          where: { parcelaGrupoId: idNum },
+      if (!conta) return;
+
+      if (conta.parcelaGrupoId) {
+        // Conta pertence a um grupo — excluir todas as parcelas do grupo
+        await tx.conta.deleteMany({
+          where: { parcelaGrupoId: conta.parcelaGrupoId },
         });
+      } else {
+        // Verificar se outras contas apontam para esta como grupo
+        const dependents = await tx.conta.count({
+          where: { parcelaGrupoId: idNum, id: { not: idNum } },
+        });
+        if (dependents > 0) {
+          // Esta conta é âncora — excluir todo o grupo
+          await tx.conta.deleteMany({
+            where: { parcelaGrupoId: idNum },
+          });
+        } else {
+          await tx.conta.delete({ where: { id: idNum } });
+        }
       }
-      await prisma.conta.delete({ where: { id: idNum } }).catch(() => {
-        // Já foi excluída pelo deleteMany acima se era parte do grupo
-      });
-    }
+    });
 
     return NextResponse.json({ message: "Conta excluída com sucesso" });
   });

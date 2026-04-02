@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -111,7 +111,13 @@ export default function ClientesPage() {
     fetchClientes();
   }, []);
 
+  // Debounced search — skip initial render (mount effect handles it)
+  const buscaRef = useRef(true);
   useEffect(() => {
+    if (buscaRef.current) {
+      buscaRef.current = false;
+      return;
+    }
     const timeout = setTimeout(() => {
       fetchClientes();
     }, 300);

@@ -1,6 +1,6 @@
 /** Format a number as BRL currency: R$ 1.234,56 */
 export function formatPrice(value: number): string {
-  return `R$ ${value.toFixed(2).replace(".", ",")}`;
+  return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /** Format a number as BRL currency using Intl: R$ 1.234,56 */

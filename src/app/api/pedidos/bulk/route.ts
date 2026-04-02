@@ -47,77 +47,88 @@ export async function PATCH(request: NextRequest) {
       const erros: string[] = [];
 
       for (const pedido of pedidos) {
-        const itensEstoque = pedido.itens.filter(
-          (item) => item.produto.tipoEstoque === "estoque"
-        );
+        try {
+          await prisma.$transaction(async (tx) => {
+            // Re-read products inside transaction for accurate stock check
+            const produtoIds = [...new Set(pedido.itens.map((i) => i.produtoId))];
+            const produtosFrescos = await tx.produto.findMany({
+              where: { id: { in: produtoIds } },
+            });
+            const produtoMap = new Map(produtosFrescos.map((p) => [p.id, p]));
 
-        // Verificar estoque suficiente
-        const semEstoque = itensEstoque.some(
-          (item) => item.produto.estoqueAtual < item.quantidade
-        );
-        if (semEstoque) {
-          erros.push(`Pedido #${pedido.id}: estoque insuficiente`);
-          continue;
-        }
-
-        await prisma.$transaction(async (tx) => {
-          for (const item of pedido.itens) {
-            if (item.produto.tipoEstoque === "estoque") {
-              const saldoInicial = item.produto.estoqueAtual;
-              await tx.movimentacaoEstoque.create({
-                data: {
-                  produtoId: item.produtoId,
-                  tipo: "pedido",
-                  quantidade: -item.quantidade,
-                  unidade: "un",
-                  saldoInicial,
-                  saldoFinal: saldoInicial - item.quantidade,
-                  motivo: `Pedido #${pedido.id} — ${pedido.cliente?.nome || ""}`.trim(),
-                  referencia: String(pedido.id),
-                  data: pedido.dataEntrega,
-                  criadoEm: now,
-                },
-              });
-              await tx.produto.update({
-                where: { id: item.produtoId },
-                data: { estoqueAtual: { decrement: item.quantidade } },
-              });
-            } else {
-              const pesoKg = item.produto.pesoUnitarioGramas
-                ? (item.quantidade * item.produto.pesoUnitarioGramas) / 1000
-                : item.quantidade;
-              const unidade = item.produto.pesoUnitarioGramas ? "kg" : "un";
-              const colheitasDia = await tx.colheita.findMany({
-                where: { produtoId: item.produtoId, data: pedido.dataEntrega },
-              });
-              const colhido = colheitasDia.reduce((s, c) => s + c.quantidade, 0);
-              const saidasDia = await tx.movimentacaoEstoque.findMany({
-                where: { produtoId: item.produtoId, data: pedido.dataEntrega, tipo: "pedido" },
-              });
-              const jaSaiu = saidasDia.reduce((s, m) => s + Math.abs(m.quantidade), 0);
-              const saldoInicial = colhido - jaSaiu;
-              await tx.movimentacaoEstoque.create({
-                data: {
-                  produtoId: item.produtoId,
-                  tipo: "pedido",
-                  quantidade: -pesoKg,
-                  unidade,
-                  saldoInicial,
-                  saldoFinal: saldoInicial - pesoKg,
-                  motivo: `Pedido #${pedido.id} — ${pedido.cliente?.nome || ""}`.trim(),
-                  referencia: String(pedido.id),
-                  data: pedido.dataEntrega,
-                  criadoEm: now,
-                },
-              });
+            // Check stock sufficiency with fresh data
+            for (const item of pedido.itens) {
+              const prod = produtoMap.get(item.produtoId);
+              if (prod?.tipoEstoque === "estoque" && prod.estoqueAtual < item.quantidade) {
+                throw new Error(`estoque_insuficiente`);
+              }
             }
-          }
-          await tx.pedido.update({
-            where: { id: pedido.id },
-            data: { statusEntrega: "Entregue", ...(dataEntrega ? { dataEntrega } : {}) },
+
+            for (const item of pedido.itens) {
+              const prod = produtoMap.get(item.produtoId)!;
+              if (prod.tipoEstoque === "estoque") {
+                const saldoInicial = prod.estoqueAtual;
+                await tx.movimentacaoEstoque.create({
+                  data: {
+                    produtoId: item.produtoId,
+                    tipo: "pedido",
+                    quantidade: -item.quantidade,
+                    unidade: "un",
+                    saldoInicial,
+                    saldoFinal: saldoInicial - item.quantidade,
+                    motivo: `Pedido #${pedido.id} — ${pedido.cliente?.nome || ""}`.trim(),
+                    referencia: String(pedido.id),
+                    data: pedido.dataEntrega,
+                    criadoEm: now,
+                  },
+                });
+                await tx.produto.update({
+                  where: { id: item.produtoId },
+                  data: { estoqueAtual: { decrement: item.quantidade } },
+                });
+              } else {
+                const pesoKg = prod.pesoUnitarioGramas
+                  ? (item.quantidade * prod.pesoUnitarioGramas) / 1000
+                  : item.quantidade;
+                const unidade = prod.pesoUnitarioGramas ? "kg" : "un";
+                const colheitasDia = await tx.colheita.findMany({
+                  where: { produtoId: item.produtoId, data: pedido.dataEntrega },
+                });
+                const colhido = colheitasDia.reduce((s, c) => s + c.quantidade, 0);
+                const saidasDia = await tx.movimentacaoEstoque.findMany({
+                  where: { produtoId: item.produtoId, data: pedido.dataEntrega, tipo: "pedido" },
+                });
+                const jaSaiu = saidasDia.reduce((s, m) => s + Math.abs(m.quantidade), 0);
+                const saldoInicial = colhido - jaSaiu;
+                await tx.movimentacaoEstoque.create({
+                  data: {
+                    produtoId: item.produtoId,
+                    tipo: "pedido",
+                    quantidade: -pesoKg,
+                    unidade,
+                    saldoInicial,
+                    saldoFinal: saldoInicial - pesoKg,
+                    motivo: `Pedido #${pedido.id} — ${pedido.cliente?.nome || ""}`.trim(),
+                    referencia: String(pedido.id),
+                    data: pedido.dataEntrega,
+                    criadoEm: now,
+                  },
+                });
+              }
+            }
+            await tx.pedido.update({
+              where: { id: pedido.id },
+              data: { statusEntrega: "Entregue", ...(dataEntrega ? { dataEntrega } : {}) },
+            });
           });
-        });
-        count++;
+          count++;
+        } catch (e) {
+          if (e instanceof Error && e.message === "estoque_insuficiente") {
+            erros.push(`Pedido #${pedido.id}: estoque insuficiente`);
+          } else {
+            throw e;
+          }
+        }
       }
 
       return NextResponse.json({
@@ -158,6 +169,19 @@ export async function PATCH(request: NextRequest) {
       await prisma.pedido.updateMany({
         where: { id: { in: ids } },
         data: { statusEntrega: targetStatus, ...(dataEntrega ? { dataEntrega } : {}) },
+      });
+
+      return NextResponse.json({
+        message: `${ids.length} pedidos atualizados.`,
+        count: ids.length,
+      });
+    }
+
+    // alterar_data — change delivery date only, no status change
+    if (action === "alterar_data" && dataEntrega) {
+      await prisma.pedido.updateMany({
+        where: { id: { in: ids } },
+        data: { dataEntrega },
       });
 
       return NextResponse.json({
