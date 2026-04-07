@@ -56,6 +56,29 @@ if (-not (Test-Path (Join-Path $deployDir '.env'))) {
 
 Set-Location $deployDir
 
+# ── Carregar VERCEL_TOKEN do .env (evita precisar de 'vercel login') ──
+$vercelToken = $null
+$envPath = Join-Path $deployDir '.env'
+if (Test-Path $envPath) {
+    foreach ($line in (Get-Content $envPath)) {
+        if ($line -match '^\s*VERCEL_TOKEN\s*=\s*"?([^"]+)"?\s*$') {
+            $vercelToken = $Matches[1]
+            break
+        }
+    }
+}
+
+if ($vercelToken) {
+    $env:VERCEL_TOKEN = $vercelToken
+    Write-Host '  Token Vercel: encontrado no .env' -ForegroundColor Green
+} else {
+    Write-Host '  Token Vercel: nao encontrado no .env' -ForegroundColor Yellow
+    Write-Host '  O script vai tentar usar a sessao do "vercel login".' -ForegroundColor DarkGray
+    Write-Host '  Para evitar login manual, adicione VERCEL_TOKEN="seu_token" no .env' -ForegroundColor DarkGray
+    Write-Host '  Gere um token em: https://vercel.com/account/tokens' -ForegroundColor DarkGray
+    Write-Host ''
+}
+
 # Ler versao local
 $localVersion = 'desconhecida'
 $pkgPath = Join-Path $deployDir 'package.json'
@@ -106,15 +129,28 @@ Write-Host 'Dependencias atualizadas!' -ForegroundColor Green
 # ============================================================
 Show-Step 3 'CONFIGURAR VERCEL E OBTER CREDENCIAIS'
 
+# Argumentos extras do Vercel CLI quando temos token
+$vercelAuth = @()
+if ($env:VERCEL_TOKEN) { $vercelAuth = @('--token', $env:VERCEL_TOKEN) }
+
 # Linkar ao projeto Vercel se necessario
 if (-not (Test-Path (Join-Path $deployDir '.vercel'))) {
     Write-Host 'Linkando ao projeto Vercel...' -ForegroundColor Yellow
-    & npx.cmd vercel link --project morangos --yes 2>&1 | Out-Host
+    & npx.cmd vercel link --project morangos --yes @vercelAuth 2>&1 | Out-Host
 }
 
 # Puxar env vars de producao do Vercel
 Write-Host 'Obtendo variaveis de ambiente da Vercel...' -ForegroundColor Yellow
-& npx.cmd vercel env pull .env --environment production --yes 2>&1 | Out-Host
+& npx.cmd vercel env pull .env --environment production --yes @vercelAuth 2>&1 | Out-Host
+
+# Preservar VERCEL_TOKEN no .env (env pull sobrescreve o arquivo)
+if ($vercelToken) {
+    $envAfterPull = Get-Content (Join-Path $deployDir '.env') -Raw
+    if ($envAfterPull -notmatch 'VERCEL_TOKEN') {
+        Add-Content -Path (Join-Path $deployDir '.env') -Value "`nVERCEL_TOKEN=$vercelToken"
+    }
+}
+
 Write-Host 'Credenciais obtidas!' -ForegroundColor Green
 
 # ============================================================
@@ -321,7 +357,9 @@ Write-Host 'Schema atualizado!' -ForegroundColor Green
 Show-Step 5 'DEPLOY NA VERCEL'
 
 Write-Host 'Publicando nova versao...' -ForegroundColor Yellow
-$deployExit = Invoke-CmdPassthru 'npx vercel --prod --yes'
+$deployCmd = 'npx vercel --prod --yes'
+if ($env:VERCEL_TOKEN) { $deployCmd += " --token $env:VERCEL_TOKEN" }
+$deployExit = Invoke-CmdPassthru $deployCmd
 
 Write-Host ''
 if ($deployExit -eq 0) {
