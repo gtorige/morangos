@@ -56,28 +56,45 @@ if (-not (Test-Path (Join-Path $deployDir '.env'))) {
 
 Set-Location $deployDir
 
-# ── Carregar VERCEL_TOKEN do .env (evita precisar de 'vercel login') ──
-$vercelToken = $null
+# ── Verificar infraestrutura existente ──
 $envPath = Join-Path $deployDir '.env'
+$vercelLinked = Test-Path (Join-Path $deployDir '.vercel\project.json')
+$hasTurso = $false
+$vercelToken = $null
+
 if (Test-Path $envPath) {
     foreach ($line in (Get-Content $envPath)) {
-        if ($line -match '^\s*VERCEL_TOKEN\s*=\s*"?([^"]+)"?\s*$') {
-            $vercelToken = $Matches[1]
-            break
-        }
+        if ($line -match '^\s*VERCEL_TOKEN\s*=\s*"?([^"]+)"?\s*$') { $vercelToken = $Matches[1] }
+        if ($line -match '^\s*TURSO_DATABASE_URL\s*=') { $hasTurso = $true }
     }
 }
 
+Write-Host '  Projeto Vercel:  ' -NoNewline
+if ($vercelLinked) { Write-Host 'linkado' -ForegroundColor Green } else { Write-Host 'nao linkado' -ForegroundColor Red }
+Write-Host '  Banco Turso:     ' -NoNewline
+if ($hasTurso) { Write-Host 'configurado' -ForegroundColor Green } else { Write-Host 'nao encontrado' -ForegroundColor Red }
+Write-Host '  Token Vercel:    ' -NoNewline
 if ($vercelToken) {
+    Write-Host 'salvo no .env' -ForegroundColor Green
     $env:VERCEL_TOKEN = $vercelToken
-    Write-Host '  Token Vercel: encontrado no .env' -ForegroundColor Green
 } else {
-    Write-Host '  Token Vercel: nao encontrado no .env' -ForegroundColor Yellow
-    Write-Host '  O script vai tentar usar a sessao do "vercel login".' -ForegroundColor DarkGray
-    Write-Host '  Para evitar login manual, adicione VERCEL_TOKEN="seu_token" no .env' -ForegroundColor DarkGray
-    Write-Host '  Gere um token em: https://vercel.com/account/tokens' -ForegroundColor DarkGray
+    Write-Host 'nao configurado' -ForegroundColor Yellow
     Write-Host ''
+    Write-Host '  Sem token, voce precisara estar logado no Vercel CLI.' -ForegroundColor DarkGray
+    Write-Host '  Para configurar o token automatico:' -ForegroundColor DarkGray
+    Write-Host '    1. Acesse https://vercel.com/account/tokens' -ForegroundColor DarkGray
+    Write-Host '    2. Crie um token (Full Account, sem expiracao)' -ForegroundColor DarkGray
+    Write-Host ''
+    $inputToken = Read-Host '  Cole o token aqui (ou Enter para pular)'
+    if ($inputToken -and $inputToken.Trim().Length -gt 10) {
+        $vercelToken = $inputToken.Trim()
+        $env:VERCEL_TOKEN = $vercelToken
+        # Salvar no .env
+        Add-Content -Path $envPath -Value "`nVERCEL_TOKEN=$vercelToken"
+        Write-Host '  Token salvo no .env!' -ForegroundColor Green
+    }
 }
+Write-Host ''
 
 # Ler versao local
 $localVersion = 'desconhecida'
