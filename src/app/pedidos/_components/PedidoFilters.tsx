@@ -20,9 +20,10 @@ interface PedidoFiltersProps {
   allPedidos: Pedido[];
   emptyFilters: Filters;
   onClose: () => void;
+  onClearAll: () => void;
 }
 
-export function PedidoFilters({ filters, setFilters, allPedidos, emptyFilters, onClose }: PedidoFiltersProps) {
+export function PedidoFilters({ filters, setFilters, allPedidos, emptyFilters: _emptyFilters, onClose, onClearAll }: PedidoFiltersProps) {
   const uniqueClientesDrawer = [...new Set(allPedidos.map(p => p.cliente?.nome).filter(Boolean) as string[])].sort();
   const uniqueBairrosDrawer = [...new Set(allPedidos.map(p => p.cliente?.bairro).filter(Boolean) as string[])].sort();
   const uniqueCidadesDrawer = [...new Set(allPedidos.map(p => p.cliente?.cidade).filter(Boolean) as string[])].sort();
@@ -140,7 +141,7 @@ export function PedidoFilters({ filters, setFilters, allPedidos, emptyFilters, o
 
       {/* Footer */}
       <div className="px-4 py-3 border-t border-border shrink-0">
-        <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground" onClick={() => { setFilters(f => ({...emptyFilters, dataInicio: f.dataInicio, dataFim: f.dataFim})); }}>
+        <Button variant="ghost" size="sm" className="w-full text-xs text-muted-foreground" onClick={onClearAll}>
           Limpar filtros
         </Button>
       </div>

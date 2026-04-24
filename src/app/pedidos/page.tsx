@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ClipboardList } from "lucide-react";
 import { calcSubtotal as calcSubtotalBase } from "@/lib/pedido-utils";
 import { NovoPedidoSheet, NovoPedidoInitialData } from "@/components/novo-pedido-sheet";
-import { formatPrice, formatDate } from "@/lib/formatting";
+import { formatPrice, formatDate, todayStr } from "@/lib/formatting";
 import type { Produto, FormaPagamento, Promocao, PedidoItem, ItemPedidoForm } from "@/lib/types";
 import {
   type Pedido,
@@ -516,7 +516,7 @@ function PedidosPageInner() {
     ]);
     setEditProdutos(produtosData);
     setEditFormasPagamento(formasData);
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayStr();
     const ativas = promocoesData.filter((p: Promocao) => p.ativo && p.dataInicio <= today && p.dataFim >= today);
     setEditPromocoes(ativas);
     setEditDataEntrega(drawerPedido.dataEntrega || "");
@@ -800,9 +800,18 @@ function PedidosPageInner() {
     filters.cidades.length > 0,
     filters.formasPagamento.length > 0,
     filters.statusPedido?.length > 0,
+    filters.statusEntrega?.length > 0,
     filters.situacaoPagamento !== '',
     filters.recorrente !== '',
   ].filter(Boolean).length;
+
+  // Unified clear — limpa busca, filtros, tab e selecao. Preserva datas.
+  const handleClearAll = useCallback(() => {
+    setBusca('');
+    setFilters(f => ({ ...emptyFilters, dataInicio: f.dataInicio, dataFim: f.dataFim }));
+    setTab('todos');
+    setSelectedIds(new Set());
+  }, []);
 
   const tabs: { key: string; label: string; count: number }[] = [
     { key: "todos", label: "Todos", count: counts.todos },
@@ -823,6 +832,7 @@ function PedidosPageInner() {
         filters={filters}
         setFilters={setFilters}
         emptyFilters={emptyFilters}
+        onClearAll={handleClearAll}
         uniqueFormasPag={uniqueFormasPag}
         periodo={periodo}
         setPeriodo={setPeriodo}
@@ -898,6 +908,7 @@ function PedidosPageInner() {
               setFilters={setFilters}
               allPedidos={allPedidos}
               emptyFilters={emptyFilters}
+              onClearAll={handleClearAll}
               onClose={() => setDrawerFiltrosOpen(false)}
             />
           </div>
@@ -914,6 +925,7 @@ function PedidosPageInner() {
               setFilters={setFilters}
               allPedidos={allPedidos}
               emptyFilters={emptyFilters}
+              onClearAll={handleClearAll}
               onClose={() => setDrawerFiltrosOpen(false)}
             />
           </div>

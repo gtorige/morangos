@@ -17,7 +17,7 @@ function getLocalIPs(): string[] {
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: getLocalIPs(),
-  serverExternalPackages: ["@libsql/client", "@prisma/adapter-libsql", "better-sqlite3"],
+  serverExternalPackages: ["@libsql/client", "@prisma/adapter-libsql", "better-sqlite3", "pg"],
   async headers() {
     return [
       {

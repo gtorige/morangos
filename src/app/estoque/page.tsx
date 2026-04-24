@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -709,11 +710,11 @@ export default function EstoquePage() {
             <div className="flex flex-wrap gap-2 items-end">
               <div className="space-y-1">
                 <Label className="text-xs">De</Label>
-                <Input type="date" value={filtroDataDe} onChange={(e) => setFiltroDataDe(e.target.value)} className="w-36 h-7 text-xs" />
+                <DateInput value={filtroDataDe} onChange={setFiltroDataDe} className="w-36" />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Até</Label>
-                <Input type="date" value={filtroDataAte} onChange={(e) => setFiltroDataAte(e.target.value)} className="w-36 h-7 text-xs" />
+                <DateInput value={filtroDataAte} onChange={setFiltroDataAte} className="w-36" />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Produto</Label>

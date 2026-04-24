@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { TabsNav } from "@/components/ui/tabs-nav";
 import {
   Plus,
@@ -76,6 +77,7 @@ interface PedidoToolbarProps {
   filters: Filters;
   setFilters: React.Dispatch<React.SetStateAction<Filters>>;
   emptyFilters: Filters;
+  onClearAll: () => void;
   uniqueFormasPag: { id: number; nome: string }[];
   periodo: PeriodoKey;
   setPeriodo: (v: PeriodoKey) => void;
@@ -105,7 +107,8 @@ export function PedidoToolbar({
   setDrawerFiltrosOpen,
   filters,
   setFilters,
-  emptyFilters,
+  emptyFilters: _emptyFilters,
+  onClearAll,
   uniqueFormasPag,
   periodo,
   setPeriodo,
@@ -204,7 +207,7 @@ export function PedidoToolbar({
           {filters.situacaoPagamento && <Chip label={`Situacao: ${filters.situacaoPagamento}`} onRemove={() => setFilters(f => ({...f, situacaoPagamento: ''}))} />}
           {filters.statusPedido?.map(s => <Chip key={s} label={`Status: ${s}`} onRemove={() => setFilters(f => ({...f, statusPedido: (f.statusPedido || []).filter(x => x !== s)}))} />)}
           {filters.recorrente && <Chip label={`Recorrente: ${filters.recorrente === "sim" ? "Sim" : "Nao"}`} onRemove={() => setFilters(f => ({...f, recorrente: ''}))} />}
-          <button onClick={() => { setBusca(''); setFilters(f => ({...emptyFilters, dataInicio: f.dataInicio, dataFim: f.dataFim})); setTab('todos' as StatusTab); }} className="px-2.5 py-1 rounded-full text-xs border border-border text-muted-foreground hover:text-foreground transition-colors">Limpar filtros</button>
+          <button onClick={onClearAll} className="px-2.5 py-1 rounded-full text-xs border border-border text-muted-foreground hover:text-foreground transition-colors">Limpar filtros</button>
         </div>
       )}
 
@@ -241,9 +244,9 @@ export function PedidoToolbar({
         )}
         {periodo === "custom" && (
           <div className="flex items-center gap-1.5">
-            <Input type="date" value={filters.dataInicio} onChange={(e) => setFilters(f => ({ ...f, dataInicio: e.target.value }))} className="w-32 h-7 text-xs" />
+            <DateInput value={filters.dataInicio} onChange={(v) => setFilters(f => ({ ...f, dataInicio: v }))} className="w-36" />
             <span className="text-xs text-muted-foreground">a</span>
-            <Input type="date" value={filters.dataFim} onChange={(e) => setFilters(f => ({ ...f, dataFim: e.target.value }))} className="w-32 h-7 text-xs" />
+            <DateInput value={filters.dataFim} onChange={(v) => setFilters(f => ({ ...f, dataFim: v }))} className="w-36" />
           </div>
         )}
       </div>
@@ -315,11 +318,10 @@ export function PedidoToolbar({
           </Button>
           {bulkDatePickerOpen && (
             <div className="flex items-center gap-1">
-              <Input
-                type="date"
+              <DateInput
                 value={bulkDate}
-                onChange={(e) => setBulkDate(e.target.value)}
-                className="h-7 text-xs w-36"
+                onChange={(v) => setBulkDate(v)}
+                className="w-36"
               />
               <Button
                 size="sm"

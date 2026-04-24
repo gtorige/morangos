@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/api-helpers";
+import { todayStr } from "@/lib/formatting";
 
 // ── Types ──
 
@@ -156,7 +157,7 @@ export async function getAlertasEstoque(): Promise<AlertaEstoque[]> {
  * e opcionalmente descarte (perda), todas no mesmo lote.
  */
 export async function registrarCongelamento(input: CongelamentoInput) {
-  const data = input.data ?? new Date().toISOString().slice(0, 10);
+  const data = input.data ?? todayStr();
   const now = new Date().toISOString();
   const perdaKg = input.perdaKg ?? 0;
 
@@ -252,7 +253,7 @@ export async function registrarCongelamento(input: CongelamentoInput) {
  * e atualização automática de estoqueAtual para produtos tipo "estoque".
  */
 export async function registrarMovimentacao(input: MovimentacaoInput) {
-  const data = input.data ?? new Date().toISOString().slice(0, 10);
+  const data = input.data ?? todayStr();
   const now = new Date().toISOString();
 
   // Determinar sinal da quantidade
@@ -311,7 +312,7 @@ export async function registrarMovimentacao(input: MovimentacaoInput) {
  * Cria/atualiza MovimentacaoEstoque correspondente em transação.
  */
 export async function registrarColheita(input: ColheitaInput) {
-  const data = input.data ?? new Date().toISOString().slice(0, 10);
+  const data = input.data ?? todayStr();
   const now = new Date().toISOString();
 
   return prisma.$transaction(async (tx) => {

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { withAuth, parseBody, parseDateParam } from "@/lib/api-helpers";
 import { colheitaCreateSchema } from "@/lib/schemas";
 import { registrarColheita } from "@/lib/services/estoque-service";
+import { todayStr } from "@/lib/formatting";
 
 /** POST — Registrar/atualizar colheita diária (upsert por produto+data) */
 export async function POST(request: NextRequest) {
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
       data: body.data,
       observacao: body.observacao,
     });
-    return NextResponse.json({ colheita: result, data: body.data || new Date().toISOString().slice(0, 10) });
+    return NextResponse.json({ colheita: result, data: body.data || todayStr() });
   });
 }
 

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { withAuth } from "@/lib/api-helpers";
+import { todayStr } from "@/lib/formatting";
 
 export async function GET() {
   return withAuth(async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayStr();
 
     const [pedidosVencidos, contasHoje, contasAtrasadas, contasProximas] =
       await Promise.all([

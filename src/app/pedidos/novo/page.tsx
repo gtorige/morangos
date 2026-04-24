@@ -18,7 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { Plus, Trash2, Save, ArrowLeft, RotateCcw, Check } from "lucide-react";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { calcSubtotal as calcSubtotalBase } from "@/lib/pedido-utils";
-import { formatPrice } from "@/lib/formatting";
+import { formatPrice, todayStr } from "@/lib/formatting";
 import type { Produto, FormaPagamento, Promocao, ItemPedidoForm } from "@/lib/types";
 
 type ItemPedido = ItemPedidoForm;
@@ -120,7 +120,7 @@ export default function NovoPedidoPage() {
       if (!res.ok) return;
       const data = await res.json();
       if (!Array.isArray(data)) return;
-      const today = new Date().toISOString().split("T")[0];
+      const today = todayStr();
       const ativas = data.filter(
         (p: Promocao) => p.ativo && p.dataInicio <= today && p.dataFim >= today
       );
@@ -413,7 +413,7 @@ export default function NovoPedidoPage() {
         // If recurrent, also create the recurrence with auto-generation
         if (isRecorrente && diasSemana.length > 0) {
           try {
-            const today = new Date().toISOString().slice(0, 10);
+            const today = todayStr();
             const recRes = await fetch("/api/recorrentes", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
