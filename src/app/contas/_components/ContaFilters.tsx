@@ -3,6 +3,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -223,11 +224,11 @@ export function ContaFilters({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Vencimento de</Label>
-            <Input type="date" value={filterVencDe} onChange={(e) => setFilterVencDe(e.target.value)} className="h-8 text-sm" />
+            <DateInput value={filterVencDe} onChange={setFilterVencDe} className="w-full" />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Vencimento ate</Label>
-            <Input type="date" value={filterVencAte} onChange={(e) => setFilterVencAte(e.target.value)} className="h-8 text-sm" />
+            <DateInput value={filterVencAte} onChange={setFilterVencAte} className="w-full" />
           </div>
         </div>
       )}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "../../../../auth";
+import { todayStr } from "@/lib/formatting";
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,7 +13,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const periodo = searchParams.get("periodo") || "dia";
     const dataParam =
-      searchParams.get("data") || new Date().toISOString().slice(0, 10);
+      searchParams.get("data") || todayStr();
 
     // Support custom date range
     let dataInicio: string;
@@ -356,7 +357,7 @@ export async function GET(request: NextRequest) {
     }
 
     // --- Financial: contas a pagar (filtered by period) ---
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = todayStr();
     const contasNoPeriodo = await prisma.conta.findMany({
       where: {
         vencimento: { gte: dataInicio, lte: dataFim },

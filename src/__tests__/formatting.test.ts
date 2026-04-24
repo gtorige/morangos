@@ -41,8 +41,10 @@ describe("todayStr", () => {
 });
 
 describe("dateToStr", () => {
-  it("converts Date to YYYY-MM-DD", () => {
-    const d = new Date(2024, 0, 15); // Jan 15, 2024
+  it("converts Date to YYYY-MM-DD in Brazil timezone", () => {
+    // Use noon UTC to avoid timezone-dependent test behavior
+    // (noon UTC = 9 AM in São Paulo, always same calendar day)
+    const d = new Date(Date.UTC(2024, 0, 15, 12, 0, 0));
     expect(dateToStr(d)).toBe("2024-01-15");
   });
 });

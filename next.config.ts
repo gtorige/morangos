@@ -17,6 +17,7 @@ function getLocalIPs(): string[] {
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: getLocalIPs(),
+  serverExternalPackages: ["@libsql/client", "pg"],
   async headers() {
     return [
       {

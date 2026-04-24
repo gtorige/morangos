@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ZodError, type ZodSchema } from "zod";
 import { auth } from "../../auth";
 import { Prisma } from "@prisma/client";
+import { todayStr } from "@/lib/formatting";
 
 type Session = { user: { id?: string; isAdmin?: boolean } };
 
@@ -53,7 +54,7 @@ const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Valida e retorna um parâmetro de data no formato YYYY-MM-DD, ou o fallback. */
 export function parseDateParam(value: string | null, fallback?: string): string {
-  if (!value) return fallback ?? new Date().toISOString().slice(0, 10);
+  if (!value) return fallback ?? todayStr();
   if (!DATE_REGEX.test(value)) throw new ApiError("Formato de data inválido (YYYY-MM-DD)", 400);
   return value;
 }

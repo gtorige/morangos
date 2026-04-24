@@ -15,19 +15,42 @@ export function formatDate(dateStr: string): string {
   return `${day}/${month}/${year}`;
 }
 
-/** Today's date as YYYY-MM-DD */
+const BR_TZ = "America/Sao_Paulo";
+
+/** Today's date in Brazil timezone as YYYY-MM-DD */
 export function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: BR_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
-/** Current datetime as YYYY-MM-DDTHH:mm:ss */
+/** Current datetime in Brazil timezone as YYYY-MM-DDTHH:mm:ss */
 export function nowStr(): string {
-  return new Date().toISOString().slice(0, 19);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BR_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}`;
 }
 
-/** Convert a Date to YYYY-MM-DD */
+/** Convert a Date to YYYY-MM-DD in Brazil timezone */
 export function dateToStr(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: BR_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
 }
 
 /** Add days to a date string, return YYYY-MM-DD */

@@ -670,9 +670,9 @@ export default function RotaPage() {
           </Button>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <select
-            className="flex h-8 flex-1 items-center rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
+            className="flex h-8 w-full sm:flex-1 min-w-0 items-center rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/50"
             value={selectedLocalId}
             onChange={(e) => setSelectedLocalId(e.target.value)}
           >
@@ -685,7 +685,7 @@ export default function RotaPage() {
                 </option>
               ))}
           </select>
-          <Button size="sm" onClick={adicionarParada} disabled={!selectedLocalId} className="h-8 shrink-0">
+          <Button size="sm" onClick={adicionarParada} disabled={!selectedLocalId} className="h-8 w-full sm:w-auto sm:shrink-0">
             <Plus className="size-4" />
             Adicionar
           </Button>

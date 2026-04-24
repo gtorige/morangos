@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sheet";
 import { Plus, Trash2, Save, Check, RotateCcw } from "lucide-react";
 import { calcSubtotal as calcSubtotalBase } from "@/lib/pedido-utils";
-import { formatPrice } from "@/lib/formatting";
+import { formatPrice, todayStr } from "@/lib/formatting";
 import type { Produto, FormaPagamento, Promocao, ItemPedidoForm } from "@/lib/types";
 
 type ItemPedido = ItemPedidoForm;
@@ -123,7 +123,7 @@ export function NovoPedidoSheet({ open, onOpenChange, onSuccess, initialData }: 
     if (!res?.ok) return;
     const data = await res.json();
     if (!Array.isArray(data)) return;
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayStr();
     setPromocoes(data.filter((p: Promocao) => p.ativo && p.dataInicio <= today && p.dataFim >= today));
   }
 
@@ -428,7 +428,7 @@ export function NovoPedidoSheet({ open, onOpenChange, onSuccess, initialData }: 
         const pedidoCriado = await res.json();
         if (isRecorrente && diasSemana.length > 0) {
           try {
-            const today = new Date().toISOString().slice(0, 10);
+            const today = todayStr();
             const recRes = await fetch("/api/recorrentes", {
               method: "POST",
               headers: { "Content-Type": "application/json" },

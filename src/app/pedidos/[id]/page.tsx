@@ -18,7 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { Plus, Trash2, Save, ArrowLeft } from "lucide-react";
 import { Breadcrumb } from "@/components/ui/breadcrumb";
 import { calcSubtotal as calcSubtotalBase } from "@/lib/pedido-utils";
-import { formatPrice } from "@/lib/formatting";
+import { formatPrice, todayStr } from "@/lib/formatting";
 import type { Produto, FormaPagamento, Promocao, Pedido, ItemPedidoForm } from "@/lib/types";
 
 type ItemPedido = ItemPedidoForm;
@@ -117,7 +117,7 @@ export default function EditarPedidoPage() {
     try {
       const res = await fetch("/api/promocoes");
       const data = await res.json();
-      const today = new Date().toISOString().split("T")[0];
+      const today = todayStr();
       const ativas = data.filter(
         (p: Promocao) => p.ativo && p.dataInicio <= today && p.dataFim >= today
       );

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { withAuth, parseBody, parseId } from "@/lib/api-helpers";
 import { recorrenteUpdateSchema } from "@/lib/schemas";
 import { generateRecurringOrders, addDaysStr } from "@/lib/services/pedido-service";
+import { todayStr } from "@/lib/formatting";
 
 interface ItemInput {
   produtoId: number;
@@ -76,7 +77,7 @@ export async function PUT(
       return NextResponse.json(recorrente);
     }
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayStr();
     const inicio = recorrente.dataInicio > today ? recorrente.dataInicio : today;
     const fimStr = recorrente.dataFim || addDaysStr(today, 90);
 

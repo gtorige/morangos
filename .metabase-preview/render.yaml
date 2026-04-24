@@ -1,0 +1,31 @@
+# Render Blueprint — Metabase + Neon Postgres para Morangos
+# Deploy grátis em: https://render.com
+#
+# Fluxo:
+#   Turso (SQLite) → sync (Vercel Cron /15min) → Neon Postgres → Metabase (este serviço)
+
+services:
+  - type: web
+    name: morangos-metabase
+    runtime: docker
+    dockerImage: metabase/metabase:latest
+    plan: free
+    envVars:
+      # Banco interno do Metabase (metadata de dashboards, usuarios, etc)
+      # Usa H2 local no disco persistente
+      - key: MB_DB_TYPE
+        value: h2
+      - key: MB_JETTY_HOST
+        value: 0.0.0.0
+      - key: JAVA_TIMEZONE
+        value: America/Sao_Paulo
+      - key: MB_SITE_NAME
+        value: Morangos Dashboards
+      # Opcional: desabilita a demo/sample database no primeiro setup
+      - key: MB_LOAD_SAMPLE_CONTENT
+        value: "false"
+    disk:
+      name: metabase-data
+      mountPath: /metabase.db
+      sizeGB: 1
+    healthCheckPath: /api/health
